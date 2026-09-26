@@ -1,0 +1,445 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --background: #faf8ff;
+    --foreground: #0f172a;
+    --primary: #0f2942;
+    --primary-foreground: #ffffff;
+    --secondary: #4338ca;
+    --secondary-foreground: #ffffff;
+    --card: #ffffff;
+    --card-foreground: #0f172a;
+    --border: #e2e8f0;
+    --muted: #f1f5f9;
+    --muted-foreground: #64748b;
+  }
+
+  .dark {
+    --background: #090d16;
+    --foreground: #f8fafc;
+    --primary: #1e293b;
+    --primary-foreground: #ffffff;
+    --secondary: #6366f1;
+    --secondary-foreground: #ffffff;
+    --card: #0d1527;
+    --card-foreground: #f8fafc;
+    --border: #1e293b;
+    --muted: #162032;
+    --muted-foreground: #94a3b8;
+  }
+
+  * {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  a:focus-visible,
+  button:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
+  }
+}
+
+/* ========================================================================= */
+/* GLOBAL DARK THEME CASCADING OVERRIDES FOR ENTIRE APPLICATION             */
+/* Automatically maps surfaces, text, cards, borders, inputs & tables       */
+/* ========================================================================= */
+
+.dark html,
+.dark body {
+  background-color: #090d16 !important;
+  color: #f8fafc !important;
+}
+
+/* Base page containers & layout wrappers */
+.dark .bg-\[\#faf8ff\],
+.dark .bg-\[\#FAF8FF\],
+.dark [class*="bg-[#faf8ff]"],
+.dark [class*="bg-[#FAF8FF]"] {
+  background-color: #090d16 !important;
+}
+
+/* White cards & surfaces */
+.dark .bg-white,
+.dark .bg-white\/90,
+.dark .bg-white\/95 {
+  background-color: #0d1527 !important;
+}
+
+/* Slate subtle backgrounds */
+.dark .bg-slate-50,
+.dark .bg-slate-50\/80,
+.dark .bg-slate-50\/90 {
+  background-color: #121c2f !important;
+}
+
+.dark .bg-slate-100 {
+  background-color: #16243b !important;
+}
+
+/* Borders */
+.dark .border-slate-100,
+.dark .border-slate-200,
+.dark .border-slate-300,
+.dark .border-\[\#C3C6CE\],
+.dark [class*="border-slate-200"],
+.dark [class*="border-[#C3C6CE]"] {
+  border-color: #1e293b !important;
+}
+
+/* Dark theme typography adaptations */
+.dark .text-\[\#0f2942\],
+.dark .text-\[\#001428\],
+.dark [class*="text-[#0f2942]"],
+.dark [class*="text-[#001428]"] {
+  color: #f1f5f9 !important;
+}
+
+.dark .text-slate-800,
+.dark .text-slate-900 {
+  color: #f8fafc !important;
+}
+
+.dark .text-slate-700 {
+  color: #cbd5e1 !important;
+}
+
+.dark .text-slate-600 {
+  color: #94a3b8 !important;
+}
+
+.dark .text-slate-500 {
+  color: #64748b !important;
+}
+
+/* Form inputs, textareas, selects */
+.dark input:not([type="checkbox"]):not([type="radio"]),
+.dark select,
+.dark textarea {
+  background-color: #121c2f !important;
+  color: #f8fafc !important;
+  border-color: #27354a !important;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #64748b !important;
+}
+
+/* Tinted status pills in dark mode */
+.dark .bg-blue-50,
+.dark [class*="bg-blue-50"] {
+  background-color: rgba(37, 99, 235, 0.18) !important;
+  color: #93c5fd !important;
+}
+
+.dark .bg-emerald-50,
+.dark [class*="bg-emerald-50"] {
+  background-color: rgba(5, 150, 105, 0.18) !important;
+  color: #6ee7b7 !important;
+}
+
+.dark .bg-amber-50,
+.dark [class*="bg-amber-50"] {
+  background-color: rgba(217, 119, 6, 0.18) !important;
+  color: #fcd34d !important;
+}
+
+.dark .bg-red-50,
+.dark .bg-rose-50,
+.dark [class*="bg-red-50"],
+.dark [class*="bg-rose-50"] {
+  background-color: rgba(225, 29, 72, 0.18) !important;
+  color: #fda4af !important;
+}
+
+/* Splash screen dark adaptation */
+.dark #splash-screen {
+  background-color: #090d16 !important;
+}
+
+/* 3D Perspective and Motion System */
+.perspective-canvas {
+  perspective: 1200px;
+  perspective-origin: 50% 45%;
+}
+
+.parallax-tilt-group {
+  transform-style: preserve-3d;
+  transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1);
+  will-change: transform;
+}
+
+@keyframes flowDashes {
+  to {
+    stroke-dashoffset: -40;
+  }
+}
+
+.flow-line {
+  stroke-dasharray: 6 6;
+  animation: flowDashes 2.8s linear infinite;
+}
+
+@keyframes floatGentle {
+  0%, 100% {
+    transform: translate3d(0, 0, 30px) rotateX(1.5deg) rotateY(-2deg);
+  }
+  50% {
+    transform: translate3d(0, -8px, 34px) rotateX(-0.5deg) rotateY(-0.5deg);
+  }
+}
+
+@keyframes floatAux1 {
+  0%, 100% {
+    transform: translate3d(0, 0, 48px);
+  }
+  50% {
+    transform: translate3d(0, -6px, 52px);
+  }
+}
+
+@keyframes floatAux2 {
+  0%, 100% {
+    transform: translate3d(0, 0, 56px);
+  }
+  50% {
+    transform: translate3d(0, -7px, 60px);
+  }
+}
+
+.anim-float-doc {
+  animation: floatGentle 8s ease-in-out infinite;
+}
+
+.anim-float-panel1 {
+  animation: floatAux1 7s ease-in-out infinite 0.5s;
+}
+
+.anim-float-panel2 {
+  animation: floatAux2 7.5s ease-in-out infinite 1s;
+}
+
+/* Custom Shadows */
+.shadow-elevation-1 {
+  box-shadow: 0 1px 3px rgba(15, 41, 66, 0.05), 0 1px 2px rgba(15, 41, 66, 0.03);
+}
+
+.shadow-elevation-2 {
+  box-shadow: 0 4px 12px -2px rgba(15, 41, 66, 0.08), 0 2px 6px -1px rgba(15, 41, 66, 0.04);
+}
+
+.shadow-elevation-3 {
+  box-shadow: 0 12px 28px -4px rgba(15, 41, 66, 0.12), 0 4px 12px -2px rgba(15, 41, 66, 0.06);
+}
+
+.shadow-elevation-hover {
+  box-shadow: 0 20px 35px -6px rgba(15, 41, 66, 0.16), 0 8px 16px -3px rgba(15, 41, 66, 0.08);
+}
+
+.shadow-card-3d {
+  box-shadow: 0 25px 50px -12px rgba(15, 41, 66, 0.18), 0 0 0 1px rgba(226, 232, 240, 0.8);
+}
+
+.dark .shadow-card-3d {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(30, 41, 59, 0.8) !important;
+}
+
+.dark .shadow-elevation-3 {
+  box-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.55), 0 4px 12px -2px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* Splash Screen Fade */
+.splash-fade-out {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.65s ease;
+}
+
+/* ========================================================================= */
+/* WORKSPACE ANIMATION SYSTEM                                                */
+/* Page transitions, staggered reveals, interactive micro-animations         */
+/* ========================================================================= */
+
+/* --- Fade In (used for page entry, dropdown menus) --- */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-fadeIn {
+  animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* --- Slide Up + Fade (primary page element animation) --- */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-slideUp {
+  animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* --- Slide Down + Fade (for dropdowns, notifications) --- */
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-slideDown {
+  animation: slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* --- Slide In from Right (for document panels) --- */
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.animate-slideInRight {
+  animation: slideInRight 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* --- Scale Pop (for buttons, status badges, toast) --- */
+@keyframes scalePop {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+.animate-scalePop {
+  animation: scalePop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* --- Modal Entrance (backdrop + card scale) --- */
+@keyframes modalOverlay {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes modalContent {
+  from { opacity: 0; transform: scale(0.95) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.animate-modalOverlay {
+  animation: modalOverlay 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.animate-modalContent {
+  animation: modalContent 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* --- Stagger Delay Utilities (for grids, lists) --- */
+.stagger-1 { animation-delay: 0.04s; }
+.stagger-2 { animation-delay: 0.08s; }
+.stagger-3 { animation-delay: 0.12s; }
+.stagger-4 { animation-delay: 0.16s; }
+.stagger-5 { animation-delay: 0.20s; }
+.stagger-6 { animation-delay: 0.24s; }
+.stagger-7 { animation-delay: 0.28s; }
+.stagger-8 { animation-delay: 0.32s; }
+
+/* --- Shimmer Loading Effect --- */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent 25%, rgba(148, 163, 184, 0.12) 50%, transparent 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+}
+
+/* --- Progress Bar Grow --- */
+@keyframes progressGrow {
+  from { width: 0; }
+}
+.animate-progressGrow {
+  animation: progressGrow 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* --- Notification Slide (from top) --- */
+@keyframes notifSlide {
+  from { opacity: 0; transform: translateY(-100%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-notifSlide {
+  animation: notifSlide 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* --- Subtle Pulse Ring (for live indicators) --- */
+@keyframes pulseRing {
+  0% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.5); }
+  70% { box-shadow: 0 0 0 6px rgba(37, 99, 235, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
+}
+.animate-pulseRing {
+  animation: pulseRing 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* --- Table Row Highlight Entrance --- */
+@keyframes rowReveal {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.animate-rowReveal {
+  animation: rowReveal 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* --- Card Hover Lift (interactive) --- */
+.card-hover-lift {
+  transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.25s ease;
+}
+.card-hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px -5px rgba(15, 41, 66, 0.1), 0 4px 10px -2px rgba(15, 41, 66, 0.05);
+}
+.dark .card-hover-lift:hover {
+  box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.4), 0 4px 10px -2px rgba(0, 0, 0, 0.25);
+}
+
+/* --- Interactive Button Press --- */
+.btn-press {
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.btn-press:active {
+  transform: scale(0.97);
+}
+
+/* --- Drag Zone Breathe (for upload area idle state) --- */
+@keyframes breathe {
+  0%, 100% { border-color: rgba(148, 163, 184, 0.4); }
+  50% { border-color: rgba(59, 130, 246, 0.5); }
+}
+.animate-breathe {
+  animation: breathe 3s ease-in-out infinite;
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  .flow-line {
+    animation: none !important;
+  }
+  .anim-float-doc, .anim-float-panel1, .anim-float-panel2 {
+    animation: none !important;
+    transform: none !important;
+  }
+  .parallax-tilt-group {
+    transform: none !important;
+    transition: none !important;
+  }
+  .animate-slideUp, .animate-slideDown, .animate-slideInRight,
+  .animate-scalePop, .animate-fadeIn, .animate-modalOverlay,
+  .animate-modalContent, .animate-notifSlide, .animate-rowReveal,
+  .animate-shimmer, .animate-breathe, .animate-pulseRing {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .card-hover-lift:hover {
+    transform: none !important;
+  }
+}
