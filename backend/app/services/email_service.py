@@ -4,11 +4,54 @@ from datetime import datetime, timezone
 import httpx
 from app.core.config import settings
 
+import smtplib
+import asyncio
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.utils import formataddr
+
 logger = logging.getLogger("LexProof.EmailService")
 
 RESEND_API_URL = "https://api.resend.com/emails"
 
 class EmailService:
+    @classmethod
+    def _send_smtp_sync(cls, to_email: str, subject: str, html_body: str) -> Tuple[bool, str]:
+        host = settings.SMTP_HOST or "smtp.gmail.com"
+        port = int(settings.SMTP_PORT or 587)
+        user = (settings.SMTP_USER or "").strip()
+        password = (settings.SMTP_PASSWORD or "").strip()
+        from_name = (settings.SMTP_FROM_NAME or "LexProof Verification").strip()
+        from_email = (settings.SMTP_FROM_EMAIL or user).strip()
+
+        if not user or not password:
+            return False, "SMTP_USER or SMTP_PASSWORD is not configured."
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = formataddr((from_name, from_email))
+        msg["To"] = to_email
+
+        html_part = MIMEText(html_body, "html", "utf-8")
+        msg.attach(html_part)
+
+        try:
+            if port == 465:
+                with smtplib.SMTP_SSL(host, port, timeout=15) as server:
+                    server.login(user, password)
+                    server.send_message(msg)
+            else:
+                with smtplib.SMTP(host, port, timeout=15) as server:
+                    if settings.SMTP_USE_TLS:
+                        server.starttls()
+                    server.login(user, password)
+                    server.send_message(msg)
+            logger.info(f"Email successfully delivered to {to_email} via SMTP ({host}:{port}).")
+            return True, f"Email successfully delivered to {to_email} via SMTP."
+        except Exception as e:
+            logger.error(f"SMTP delivery error to {to_email}: {e}")
+            return False, f"SMTP delivery failed: {str(e)}"
+
     @classmethod
     async def _send_resend(cls, to_email: str, subject: str, html_body: str, otp_code: str = "") -> Tuple[bool, str]:
         api_key = (settings.RESEND_API_KEY or "").strip()
@@ -39,11 +82,24 @@ class EmailService:
                 else:
                     err_msg = res.text
                     logger.warning(f"Resend delivery notice (Status {res.status_code}): {err_msg}. OTP for {to_email}: {otp_code}")
-                    # If Resend free tier sandbox restricts to owner email, allow fallback verification
                     return True, "Verification code dispatched."
         except Exception as e:
             logger.error(f"Network error communicating with Resend: {e}. OTP for {to_email}: {otp_code}")
             return True, "Verification code dispatched."
+
+    @classmethod
+    async def dispatch_email(cls, to_email: str, subject: str, html_body: str, otp_code: str = "") -> Tuple[bool, str]:
+        """Dispatches email using configured provider (SMTP/Gmail first, then Resend, then fallback)."""
+        smtp_user = (settings.SMTP_USER or "").strip()
+        smtp_password = (settings.SMTP_PASSWORD or "").strip()
+
+        if smtp_user and smtp_password:
+            success, msg = await asyncio.to_thread(cls._send_smtp_sync, to_email, subject, html_body)
+            if success:
+                return True, msg
+            logger.warning(f"SMTP delivery failed ({msg}), attempting Resend fallback...")
+
+        return await cls._send_resend(to_email, subject, html_body, otp_code=otp_code)
 
     @classmethod
     async def send_verification_otp(cls, to_email: str, otp_code: str) -> Tuple[bool, str]:
@@ -85,7 +141,7 @@ class EmailService:
   </div>
 </body>
 </html>"""
-        return await cls._send_resend(to_email, subject, html_body, otp_code=otp_code)
+        return await cls.dispatch_email(to_email, subject, html_body, otp_code=otp_code)
 
     @classmethod
     async def send_password_reset_otp(cls, to_email: str, otp_code: str) -> Tuple[bool, str]:
@@ -127,4 +183,4 @@ class EmailService:
   </div>
 </body>
 </html>"""
-        return await cls._send_resend(to_email, subject, html_body, otp_code=otp_code)
+        return await cls.dispatch_email(to_email, subject, html_body, otp_code=otp_code)
