@@ -32,7 +32,9 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:8000",
-        "http://127.0.0.1:8000"
+        "http://127.0.0.1:8000",
+        "https://lexproof-blue.vercel.app",
+        "https://lexproof-2f0q.onrender.com",
     ]
     
     # Database (MongoDB)
@@ -52,8 +54,8 @@ class Settings(BaseSettings):
     # Google OAuth 2.0 / OpenID Connect
     GOOGLE_CLIENT_ID: Optional[str] = None
     GOOGLE_CLIENT_SECRET: Optional[str] = None
-    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/google/callback"
-    GOOGLE_FRONTEND_REDIRECT_URL: str = "http://localhost:3000/dashboard"
+    GOOGLE_REDIRECT_URI: str = "https://lexproof-2f0q.onrender.com/api/v1/auth/google/callback"
+    GOOGLE_FRONTEND_REDIRECT_URL: str = "https://lexproof-blue.vercel.app/dashboard"
 
     # SMS Provider Integration (e.g., Twilio)
     SMS_PROVIDER: Optional[str] = None

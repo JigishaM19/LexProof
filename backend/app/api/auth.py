@@ -158,13 +158,28 @@ async def reset_password(req: ResetPasswordRequest):
 # ==============================================================================
 
 @router.get("/google/url")
-async def get_google_auth_url(redirect: Optional[str] = "/dashboard"):
+async def get_google_auth_url(request: Request, redirect: Optional[str] = "/dashboard"):
     client_id = (settings.GOOGLE_CLIENT_ID or "").strip()
     if not client_id:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Google OAuth credentials are not configured on this server."
+            detail="Google OAuth credentials are not configured on this server. Please ensure GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set."
         )
+
+    # Determine caller's frontend origin dynamically
+    origin = request.headers.get("origin") or ""
+    referer = request.headers.get("referer") or ""
+    frontend_base = settings.FRONTEND_URL
+    if "vercel.app" in origin or "vercel.app" in referer:
+        frontend_base = "https://lexproof-blue.vercel.app"
+    elif "localhost:3000" in origin or "localhost:3000" in referer:
+        frontend_base = "http://localhost:3000"
+
+    # Determine callback redirect URI
+    redirect_uri = settings.GOOGLE_REDIRECT_URI
+    host = request.headers.get("host", "")
+    if "onrender.com" in host or not redirect_uri:
+        redirect_uri = f"https://{host}/api/v1/auth/google/callback" if host else settings.GOOGLE_REDIRECT_URI
 
     # Generate secure state token
     state = generate_secure_token(32)
@@ -175,13 +190,15 @@ async def get_google_auth_url(redirect: Optional[str] = "/dashboard"):
     await db["oauth_states"].insert_one({
         "state": state,
         "target_redirect": redirect or "/dashboard",
+        "frontend_url": frontend_base,
+        "redirect_uri": redirect_uri,
         "created_at": now,
         "expires_at": expires_at
     })
 
     params = {
         "client_id": client_id,
-        "redirect_uri": settings.GOOGLE_REDIRECT_URI,
+        "redirect_uri": redirect_uri,
         "response_type": "code",
         "scope": "openid email profile",
         "state": state,
@@ -197,12 +214,14 @@ async def google_oauth_callback(
     state: Optional[str] = None,
     error: Optional[str] = None
 ):
+    fallback_frontend = settings.FRONTEND_URL or "https://lexproof-blue.vercel.app"
+
     if error:
-        login_err_url = f"{settings.FRONTEND_URL}/login?error={urllib.parse.quote(f'Google authentication failed: {error}')}"
+        login_err_url = f"{fallback_frontend}/login?error={urllib.parse.quote(f'Google authentication failed: {error}')}"
         return RedirectResponse(url=login_err_url)
 
     if not code or not state:
-        login_err_url = f"{settings.FRONTEND_URL}/login?error={urllib.parse.quote('Invalid authorization code or state received from Google.')}"
+        login_err_url = f"{fallback_frontend}/login?error={urllib.parse.quote('Invalid authorization code or state received from Google.')}"
         return RedirectResponse(url=login_err_url)
 
     db = await get_database()
@@ -210,19 +229,21 @@ async def google_oauth_callback(
     state_doc = await oauth_states_col.find_one({"state": state})
 
     if not state_doc:
-        login_err_url = f"{settings.FRONTEND_URL}/login?error={urllib.parse.quote('OAuth session expired or invalid state. Please try again.')}"
+        login_err_url = f"{fallback_frontend}/login?error={urllib.parse.quote('OAuth session expired or invalid state. Please try again.')}"
         return RedirectResponse(url=login_err_url)
 
     # Consume state token to prevent replay attacks
     await oauth_states_col.delete_one({"_id": state_doc["_id"]})
     target_redirect = state_doc.get("target_redirect", "/dashboard")
+    dest_frontend = state_doc.get("frontend_url") or fallback_frontend
+    redirect_uri = state_doc.get("redirect_uri") or settings.GOOGLE_REDIRECT_URI
 
     # Exchange authorization code for tokens
     client_id = (settings.GOOGLE_CLIENT_ID or "").strip()
     client_secret = (settings.GOOGLE_CLIENT_SECRET or "").strip()
 
     if not client_id or not client_secret:
-        login_err_url = f"{settings.FRONTEND_URL}/login?error={urllib.parse.quote('Google OAuth credentials not configured on backend.')}"
+        login_err_url = f"{dest_frontend}/login?error={urllib.parse.quote('Google OAuth credentials not configured on backend.')}"
         return RedirectResponse(url=login_err_url)
 
     token_url = "https://oauth2.googleapis.com/token"
@@ -230,7 +251,7 @@ async def google_oauth_callback(
         "code": code,
         "client_id": client_id,
         "client_secret": client_secret,
-        "redirect_uri": settings.GOOGLE_REDIRECT_URI,
+        "redirect_uri": redirect_uri,
         "grant_type": "authorization_code"
     }
 
@@ -239,7 +260,7 @@ async def google_oauth_callback(
             token_res = await client.post(token_url, data=token_payload)
             if token_res.status_code != 200:
                 err_detail = token_res.text
-                login_err_url = f"{settings.FRONTEND_URL}/login?error={urllib.parse.quote(f'Google token exchange failed: {err_detail}')}"
+                login_err_url = f"{dest_frontend}/login?error={urllib.parse.quote(f'Google token exchange failed: {err_detail}')}"
                 return RedirectResponse(url=login_err_url)
 
             token_data = token_res.json()
@@ -251,7 +272,7 @@ async def google_oauth_callback(
                 headers={"Authorization": f"Bearer {access_token_google}"}
             )
             if userinfo_res.status_code != 200:
-                login_err_url = f"{settings.FRONTEND_URL}/login?error={urllib.parse.quote('Could not retrieve user info from Google.')}"
+                login_err_url = f"{dest_frontend}/login?error={urllib.parse.quote('Could not retrieve user info from Google.')}"
                 return RedirectResponse(url=login_err_url)
 
             google_user_info = userinfo_res.json()
@@ -264,7 +285,7 @@ async def google_oauth_callback(
             target_redirect = "/organization" if user_role == "ORGANIZATION" else "/individual"
 
         # Redirect user to frontend login route with token & intended destination
-        login_dest = f"{settings.FRONTEND_URL}/login?token={urllib.parse.quote(app_access_token)}&redirect={urllib.parse.quote(target_redirect)}"
+        login_dest = f"{dest_frontend}/login?token={urllib.parse.quote(app_access_token)}&redirect={urllib.parse.quote(target_redirect)}"
         redirect_response = RedirectResponse(url=login_dest, status_code=status.HTTP_302_FOUND)
 
         # Set secure HTTP-only cookie
@@ -280,5 +301,5 @@ async def google_oauth_callback(
         return redirect_response
 
     except Exception as e:
-        login_err_url = f"{settings.FRONTEND_URL}/login?error={urllib.parse.quote(f'Authentication error: {str(e)}')}"
+        login_err_url = f"{dest_frontend}/login?error={urllib.parse.quote(f'Authentication error: {str(e)}')}"
         return RedirectResponse(url=login_err_url)
