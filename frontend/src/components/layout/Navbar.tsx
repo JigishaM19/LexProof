@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useI18n } from "@/lib/i18n";
 import {
@@ -26,6 +26,12 @@ import {
   LogOut,
   Check,
   SunMoon,
+  GraduationCap,
+  Sparkles,
+  Layers,
+  ArrowRight,
+  BadgeCheck,
+  UserCheck,
 } from "lucide-react";
 import { api, User as UserType } from "@/lib/api";
 
@@ -44,16 +50,17 @@ export function LexProofLogo({ className = "w-10 h-10" }: { className?: string }
 
 export default function Navbar() {
   const router = useRouter();
+  const pathname = usePathname();
   const { locale, setLocale, t, languages, currentLanguage } = useI18n();
   const { theme, setTheme, resolvedTheme } = useTheme();
 
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileSubmenu, setMobileSubmenu] = useState<string | null>(null);
-  const [hoveredOrgItem, setHoveredOrgItem] = useState<string | null>(null);
   const [mobileOrgItem, setMobileOrgItem] = useState<string | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState<UserType | null>(null);
+  
   const mounted = React.useSyncExternalStore(
     () => () => {},
     () => true,
@@ -117,6 +124,14 @@ export default function Navbar() {
     };
   }, []);
 
+  // Active route helpers
+  const isHomeActive = pathname === "/";
+  const isSolutionsActive = pathname === "/solutions" || pathname.startsWith("/solutions/") || pathname.startsWith("/platform/");
+  const isHowItWorksActive = pathname === "/how-it-works";
+  const isVerificationActive = pathname === "/verification" || pathname.startsWith("/verification/");
+  const isResourcesActive = pathname === "/resources" || pathname.startsWith("/resources/") || pathname === "/help" || pathname === "/faq" || pathname === "/contact";
+  const isAboutActive = pathname === "/about";
+
   const handleLogout = async () => {
     try {
       await api.logout();
@@ -131,7 +146,6 @@ export default function Navbar() {
     router.push("/");
   };
 
-  // Intercept protected feature clicks: redirect unauthenticated users to login
   const handleProtectedClick = (e: React.MouseEvent, targetUrl: string) => {
     e.preventDefault();
     setActiveDropdown(null);
@@ -149,7 +163,12 @@ export default function Navbar() {
         <div className="flex items-center justify-between h-20">
           
           {/* Brand Logo & Name */}
-          <Link href="/" className="flex items-center gap-3 group focus:outline-none" aria-label="LexProof Home">
+          <Link 
+            href="/" 
+            onClick={() => { setActiveDropdown(null); setMobileMenuOpen(false); }}
+            className="flex items-center gap-3 group focus:outline-none" 
+            aria-label="LexProof Home"
+          >
             <LexProofLogo className="w-10 h-10 transition-transform group-hover:scale-105 duration-200" />
             <div className="flex flex-col">
               <span className="text-xl font-bold tracking-tight text-[#0f2942] dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
@@ -163,27 +182,38 @@ export default function Navbar() {
 
           {/* Desktop Navigation: Home | Solutions ▾ | How It Works | Verification ▾ | Resources ▾ | About */}
           <nav className="hidden lg:flex items-center gap-1 xl:gap-2" aria-label="Primary Navigation">
+            
+            {/* 1. Home */}
             <Link
               href="/"
-              className="px-3.5 py-2 text-sm font-semibold text-[#0f2942] dark:text-slate-100 hover:text-blue-600 dark:hover:text-blue-400 rounded-md transition-colors"
-              aria-current="page"
+              onClick={() => setActiveDropdown(null)}
+              className={`px-3.5 py-2 text-sm font-semibold rounded-lg transition-colors ${
+                isHomeActive
+                  ? "text-blue-600 dark:text-blue-400 bg-blue-50/80 dark:bg-blue-950/50"
+                  : "text-[#0f2942] dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+              }`}
+              aria-current={isHomeActive ? "page" : undefined}
             >
               {t("nav.home", "Home")}
             </Link>
 
-            {/* Solutions Trigger */}
+            {/* 2. Solutions Trigger & Mega Menu */}
             <div className="relative">
               <button
                 type="button"
                 id="solutions-btn"
                 onClick={() => toggleDropdown("solutions")}
                 aria-expanded={activeDropdown === "solutions"}
-                className="px-3.5 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-[#0f2942] dark:hover:text-white rounded-md flex items-center gap-1.5 transition-colors"
+                className={`px-3.5 py-2 text-sm font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  isSolutionsActive || activeDropdown === "solutions"
+                    ? "text-blue-600 dark:text-blue-400 bg-blue-50/80 dark:bg-blue-950/50"
+                    : "text-[#0f2942] dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                }`}
               >
                 {t("nav.solutions", "Solutions")}
                 <ChevronDown
-                  className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-150 ${
-                    activeDropdown === "solutions" ? "rotate-180 text-[#0f2942] dark:text-white" : ""
+                  className={`w-3.5 h-3.5 transition-transform duration-150 ${
+                    activeDropdown === "solutions" ? "rotate-180 text-blue-600 dark:text-blue-400" : "text-slate-400"
                   }`}
                 />
               </button>
@@ -191,233 +221,342 @@ export default function Navbar() {
               {/* Solutions Mega-Menu */}
               {activeDropdown === "solutions" && (
                 <div
-                  className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-[820px] bg-white dark:bg-slate-900 rounded-xl shadow-card-3d border border-slate-200/90 dark:border-slate-800 p-6 z-50 animate-fadeIn"
-                  onMouseLeave={() => setHoveredOrgItem(null)}
+                  className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-[920px] max-w-[95vw] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200/90 dark:border-slate-800 p-6 z-50 animate-fadeIn"
                 >
-                  <div className="grid grid-cols-3 gap-6">
-
-                    {/* ── COLUMN 1: FOR INDIVIDUALS ── */}
-                    <div>
-                      <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3 px-2 flex items-center gap-1.5">
-                        <User className="w-3.5 h-3.5" /> {t("solutionsMenu.forStudents", "For Individuals")}
-                      </h4>
-                      <ul className="space-y-1">
-                        <li>
-                          <Link
-                            href="/solutions/document-analysis"
-                            onClick={(e) => handleProtectedClick(e, "/solutions/document-analysis")}
-                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                          >
-                            {t("solutionsMenu.documentIntegrity", "Document Analysis")}
-                          </Link>
-                        </li>
-                        <li>
-                          <Link
-                            href="/solutions/student-graduate-documents"
-                            onClick={(e) => handleProtectedClick(e, "/solutions/student-graduate-documents")}
-                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                          >
-                            {t("solutionsMenu.degreeDiploma", "Student & Graduate")}
-                          </Link>
-                        </li>
-                        <li>
-                          <Link
-                            href="/solutions/personal-documents"
-                            onClick={(e) => handleProtectedClick(e, "/solutions/personal-documents")}
-                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                          >
-                            {t("solutionsMenu.transcriptsMarksheets", "Personal Documents")}
-                          </Link>
-                        </li>
-                      </ul>
+                  {/* Dropdown Header Banner */}
+                  <div className="flex items-center justify-between pb-4 mb-5 border-b border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/80 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
+                        <Sparkles className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-[#0f2942] dark:text-white">
+                          LexProof Verification Solutions
+                        </h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          Document intelligence, automated verification &amp; institutional authenticity checks
+                        </p>
+                      </div>
                     </div>
-
-                    {/* ── COLUMN 2: FOR ORGANIZATIONS ── */}
-                    <div>
-                      <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3 px-2 flex items-center gap-1.5">
-                        <Building2 className="w-3.5 h-3.5" /> {t("solutionsMenu.forUniversities", "For Organizations")}
-                      </h4>
-                      <ul className="space-y-1">
-
-                        {/* Universities & Colleges */}
-                        <li className="relative" onMouseEnter={() => setHoveredOrgItem("universities")} onMouseLeave={() => setHoveredOrgItem(null)}>
-                          <button
-                            type="button"
-                            className="w-full flex items-center justify-between px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer"
-                          >
-                            <span>{t("solutionsMenu.forUniversities", "Universities & Colleges")}</span>
-                            <ChevronDown className="w-3 h-3 text-slate-400 -rotate-90 flex-shrink-0" />
-                          </button>
-                          {hoveredOrgItem === "universities" && (
-                            <div className="absolute left-full top-0 ml-1 w-52 bg-white dark:bg-slate-900 rounded-xl shadow-card-3d border border-slate-200/90 dark:border-slate-800 py-2 z-50">
-                              <Link
-                                href="/solutions/universities-colleges/supported-universities"
-                                onClick={() => setActiveDropdown(null)}
-                                className="block px-4 py-2 text-sm text-slate-700 dark:text-slate-200 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                              >
-                                {t("verificationMenu.supportedUniversities", "Supported Universities")}
-                              </Link>
-                              <Link
-                                href="/solutions/universities-colleges/supported-colleges"
-                                onClick={() => setActiveDropdown(null)}
-                                className="block px-4 py-2 text-sm text-slate-700 dark:text-slate-200 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                              >
-                                Supported Colleges
-                              </Link>
-                            </div>
-                          )}
-                        </li>
-
-                        {/* Government Documents Analysis */}
-                        <li className="relative" onMouseEnter={() => setHoveredOrgItem("govdocs")} onMouseLeave={() => setHoveredOrgItem(null)}>
-                          <button
-                            type="button"
-                            className="w-full flex items-center justify-between px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer"
-                          >
-                            <span>{t("solutionsMenu.forGovt", "Government Documents")}</span>
-                            <ChevronDown className="w-3 h-3 text-slate-400 -rotate-90 flex-shrink-0" />
-                          </button>
-                          {hoveredOrgItem === "govdocs" && (
-                            <div className="absolute left-full top-0 ml-1 w-60 bg-white dark:bg-slate-900 rounded-xl shadow-card-3d border border-slate-200/90 dark:border-slate-800 py-2 z-50">
-                              <Link href="/solutions/government-documents/identity" onClick={(e) => handleProtectedClick(e, "/solutions/government-documents/identity")} className="block px-4 py-2 text-sm text-slate-700 dark:text-slate-200 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-blue-600 transition-colors">Identity Documents</Link>
-                              <Link href="/solutions/government-documents/address" onClick={(e) => handleProtectedClick(e, "/solutions/government-documents/address")} className="block px-4 py-2 text-sm text-slate-700 dark:text-slate-200 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-blue-600 transition-colors">Address Documents</Link>
-                              <Link href="/solutions/government-documents/educational" onClick={(e) => handleProtectedClick(e, "/solutions/government-documents/educational")} className="block px-4 py-2 text-sm text-slate-700 dark:text-slate-200 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-blue-600 transition-colors">Educational Documents</Link>
-                              <Link href="/solutions/government-documents/income-financial" onClick={(e) => handleProtectedClick(e, "/solutions/government-documents/income-financial")} className="block px-4 py-2 text-sm text-slate-700 dark:text-slate-200 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-blue-600 transition-colors">Income &amp; Financial Documents</Link>
-                              <Link href="/solutions/government-documents/caste-category" onClick={(e) => handleProtectedClick(e, "/solutions/government-documents/caste-category")} className="block px-4 py-2 text-sm text-slate-700 dark:text-slate-200 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-blue-600 transition-colors">Caste / Category Documents</Link>
-                              <Link href="/solutions/government-documents/employment-service" onClick={(e) => handleProtectedClick(e, "/solutions/government-documents/employment-service")} className="block px-4 py-2 text-sm text-slate-700 dark:text-slate-200 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-blue-600 transition-colors">Employment / Service Documents</Link>
-                              <Link href="/solutions/government-documents/other-certificates" onClick={(e) => handleProtectedClick(e, "/solutions/government-documents/other-certificates")} className="block px-4 py-2 text-sm text-slate-700 dark:text-slate-200 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-blue-600 transition-colors">Other Government Certificates</Link>
-                            </div>
-                          )}
-                        </li>
-
-                        {/* Authorized Verifiers */}
-                        <li>
-                          <Link
-                            href="/solutions/authorized-verifiers"
-                            onClick={(e) => handleProtectedClick(e, "/solutions/authorized-verifiers")}
-                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                          >
-                            {t("solutionsMenu.officialVerifier", "Authorized Verifiers")}
-                          </Link>
-                        </li>
-                      </ul>
-                    </div>
-
-                    {/* ── COLUMN 3: PLATFORM CAPABILITIES ── */}
-                    <div>
-                      <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3 px-2 flex items-center gap-1.5">
-                        <FileText className="w-3.5 h-3.5" /> Platform Capabilities
-                      </h4>
-                      <ul className="space-y-1">
-                        <li>
-                          <Link
-                            href="/platform/document-analysis"
-                            onClick={(e) => handleProtectedClick(e, "/platform/document-analysis")}
-                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                          >
-                            Document Analysis
-                          </Link>
-                        </li>
-                        <li>
-                          <Link
-                            href="/platform/information-extraction"
-                            onClick={(e) => handleProtectedClick(e, "/platform/information-extraction")}
-                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                          >
-                            Information Extraction
-                          </Link>
-                        </li>
-                        <li>
-                          <Link
-                            href="/platform/document-comparison"
-                            onClick={(e) => handleProtectedClick(e, "/platform/document-comparison")}
-                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                          >
-                            Document Comparison
-                          </Link>
-                        </li>
-                        <li>
-                          <Link
-                            href="/platform/integrity-checks"
-                            onClick={(e) => handleProtectedClick(e, "/platform/integrity-checks")}
-                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                          >
-                            Integrity Checks
-                          </Link>
-                        </li>
-                        <li>
-                          <Link
-                            href="/platform/verification-workflows"
-                            onClick={(e) => handleProtectedClick(e, "/platform/verification-workflows")}
-                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                          >
-                            Verification Workflows
-                          </Link>
-                        </li>
-                      </ul>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 px-2">
-                    <span>{t("solutionsMenu.subtitle", "Explore all institutional & individual tools")}</span>
                     <Link
                       href="/solutions"
                       onClick={() => setActiveDropdown(null)}
-                      className="text-blue-600 dark:text-blue-400 font-semibold hover:underline flex items-center gap-1"
+                      className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 flex items-center gap-1 group"
                     >
-                      {t("solutionsMenu.exploreSolutions", "Explore all solutions →")}
+                      <span>Overview &amp; All Solutions</span>
+                      <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
+                    </Link>
+                  </div>
+
+                  {/* 3 Main Categories Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+                    {/* ── COLUMN 1: INDIVIDUAL & PERSONAL ── */}
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-blue-700 dark:text-blue-400 bg-blue-50/70 dark:bg-blue-950/50 px-2.5 py-1 rounded-md w-fit">
+                        <User className="w-3.5 h-3.5" />
+                        <span>Individual &amp; Personal</span>
+                      </div>
+
+                      <div className="space-y-1">
+                        <Link
+                          href="/solutions/document-analysis"
+                          onClick={() => setActiveDropdown(null)}
+                          className="group flex items-start gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors"
+                        >
+                          <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
+                            <Sparkles className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-[#0f2942] dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                              Document Analysis
+                            </div>
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug mt-0.5">
+                              AI forensic analysis, tamper detection &amp; document integrity checks.
+                            </div>
+                          </div>
+                        </Link>
+
+                        <Link
+                          href="/solutions/student-graduate-documents"
+                          onClick={() => setActiveDropdown(null)}
+                          className="group flex items-start gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors"
+                        >
+                          <div className="w-8 h-8 rounded-lg bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
+                            <GraduationCap className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-[#0f2942] dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                              Student &amp; Graduate
+                            </div>
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug mt-0.5">
+                              Verify degrees, diplomas, transcripts &amp; academic marksheets.
+                            </div>
+                          </div>
+                        </Link>
+
+                        <Link
+                          href="/solutions/personal-documents"
+                          onClick={() => setActiveDropdown(null)}
+                          className="group flex items-start gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors"
+                        >
+                          <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
+                            <UserCheck className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-[#0f2942] dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                              Personal Documents
+                            </div>
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug mt-0.5">
+                              Individual certificates, identity cards &amp; personal proofs.
+                            </div>
+                          </div>
+                        </Link>
+                      </div>
+                    </div>
+
+                    {/* ── COLUMN 2: GOVERNMENT & ORGANIZATIONS ── */}
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 bg-emerald-50/70 dark:bg-emerald-950/50 px-2.5 py-1 rounded-md w-fit">
+                        <Building2 className="w-3.5 h-3.5" />
+                        <span>Government &amp; Institutions</span>
+                      </div>
+
+                      <div className="space-y-2">
+                        {/* Government Documents Card & Tags */}
+                        <div className="p-2.5 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800 space-y-2">
+                          <Link
+                            href="/solutions/government-documents"
+                            onClick={() => setActiveDropdown(null)}
+                            className="flex items-center justify-between font-bold text-xs text-[#0f2942] dark:text-slate-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                          >
+                            <span className="flex items-center gap-2">
+                              <Shield className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                              Government Documents
+                            </span>
+                            <span className="text-[10px] bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-300 font-mono px-1.5 py-0.5 rounded font-semibold">
+                              7 Categories
+                            </span>
+                          </Link>
+                          
+                          <div className="flex flex-wrap gap-1 pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
+                            <Link href="/solutions/government-documents/identity" onClick={() => setActiveDropdown(null)} className="px-2 py-0.5 text-[10.5px] rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-blue-500 hover:text-blue-600 transition-colors font-medium">Identity</Link>
+                            <Link href="/solutions/government-documents/address" onClick={() => setActiveDropdown(null)} className="px-2 py-0.5 text-[10.5px] rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-blue-500 hover:text-blue-600 transition-colors font-medium">Address</Link>
+                            <Link href="/solutions/government-documents/educational" onClick={() => setActiveDropdown(null)} className="px-2 py-0.5 text-[10.5px] rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-blue-500 hover:text-blue-600 transition-colors font-medium">Educational</Link>
+                            <Link href="/solutions/government-documents/income-financial" onClick={() => setActiveDropdown(null)} className="px-2 py-0.5 text-[10.5px] rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-blue-500 hover:text-blue-600 transition-colors font-medium">Income &amp; Tax</Link>
+                            <Link href="/solutions/government-documents/caste-category" onClick={() => setActiveDropdown(null)} className="px-2 py-0.5 text-[10.5px] rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-blue-500 hover:text-blue-600 transition-colors font-medium">Caste/Category</Link>
+                            <Link href="/solutions/government-documents/employment-service" onClick={() => setActiveDropdown(null)} className="px-2 py-0.5 text-[10.5px] rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-blue-500 hover:text-blue-600 transition-colors font-medium">Employment</Link>
+                            <Link href="/solutions/government-documents/other-certificates" onClick={() => setActiveDropdown(null)} className="px-2 py-0.5 text-[10.5px] rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-blue-500 hover:text-blue-600 transition-colors font-medium">Certificates</Link>
+                          </div>
+                        </div>
+
+                        {/* Universities & Colleges Card */}
+                        <div className="p-2.5 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800 space-y-2">
+                          <Link
+                            href="/solutions/universities-colleges"
+                            onClick={() => setActiveDropdown(null)}
+                            className="flex items-center justify-between font-bold text-xs text-[#0f2942] dark:text-slate-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                          >
+                            <span className="flex items-center gap-2">
+                              <Building2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                              Universities &amp; Colleges
+                            </span>
+                            <span className="text-[10px] bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-300 font-mono px-1.5 py-0.5 rounded font-semibold">
+                              Portal
+                            </span>
+                          </Link>
+
+                          <div className="flex items-center gap-2 pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
+                            <Link href="/solutions/universities-colleges/supported-universities" onClick={() => setActiveDropdown(null)} className="px-2.5 py-1 text-[11px] rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-indigo-500 hover:text-indigo-600 transition-colors font-medium flex-1 text-center">
+                              Universities List
+                            </Link>
+                            <Link href="/solutions/universities-colleges/supported-colleges" onClick={() => setActiveDropdown(null)} className="px-2.5 py-1 text-[11px] rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-indigo-500 hover:text-indigo-600 transition-colors font-medium flex-1 text-center">
+                              Colleges List
+                            </Link>
+                          </div>
+                        </div>
+
+                        {/* Authorized Verifiers */}
+                        <Link
+                          href="/solutions/authorized-verifiers"
+                          onClick={() => setActiveDropdown(null)}
+                          className="group flex items-start gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors"
+                        >
+                          <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
+                            <BadgeCheck className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-[#0f2942] dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                              Authorized Verifiers
+                            </div>
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug mt-0.5">
+                              Official background screeners, employers &amp; verifier console.
+                            </div>
+                          </div>
+                        </Link>
+                      </div>
+                    </div>
+
+                    {/* ── COLUMN 3: PLATFORM CAPABILITIES ── */}
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-purple-700 dark:text-purple-400 bg-purple-50/70 dark:bg-purple-950/50 px-2.5 py-1 rounded-md w-fit">
+                        <Layers className="w-3.5 h-3.5" />
+                        <span>Platform Capabilities</span>
+                      </div>
+
+                      <div className="space-y-1">
+                        <Link
+                          href="/platform/information-extraction"
+                          onClick={() => setActiveDropdown(null)}
+                          className="group flex items-start gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors"
+                        >
+                          <div className="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
+                            <FileText className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-[#0f2942] dark:text-slate-100 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
+                              Information Extraction
+                            </div>
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug mt-0.5">
+                              OCR data extraction &amp; key-value structure parsing.
+                            </div>
+                          </div>
+                        </Link>
+
+                        <Link
+                          href="/platform/document-comparison"
+                          onClick={() => setActiveDropdown(null)}
+                          className="group flex items-start gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors"
+                        >
+                          <div className="w-8 h-8 rounded-lg bg-teal-50 dark:bg-teal-950/60 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
+                            <Layers className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-[#0f2942] dark:text-slate-100 group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors">
+                              Document Comparison
+                            </div>
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug mt-0.5">
+                              Cross-document verification &amp; baseline template matching.
+                            </div>
+                          </div>
+                        </Link>
+
+                        <Link
+                          href="/platform/integrity-checks"
+                          onClick={() => setActiveDropdown(null)}
+                          className="group flex items-start gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors"
+                        >
+                          <div className="w-8 h-8 rounded-lg bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
+                            <Shield className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-[#0f2942] dark:text-slate-100 group-hover:text-rose-600 dark:group-hover:text-rose-400 transition-colors">
+                              Integrity &amp; Tamper Checks
+                            </div>
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug mt-0.5">
+                              EXIF analysis, image forensics &amp; seal validation.
+                            </div>
+                          </div>
+                        </Link>
+
+                        <Link
+                          href="/platform/verification-workflows"
+                          onClick={() => setActiveDropdown(null)}
+                          className="group flex items-start gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors"
+                        >
+                          <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
+                            <CheckCircle2 className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-[#0f2942] dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                              Verification Workflows
+                            </div>
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug mt-0.5">
+                              Automated multi-tier approval &amp; verification pipelines.
+                            </div>
+                          </div>
+                        </Link>
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* Dropdown Footer CTA Bar */}
+                  <div className="mt-5 pt-3.5 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between text-xs text-slate-500 dark:text-slate-400 bg-slate-50/60 dark:bg-slate-800/30 px-3.5 py-2.5 rounded-xl">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="font-semibold text-[#0f2942] dark:text-slate-200">
+                        32+ Document Types Supported Across Maharashtra &amp; National Authorities
+                      </span>
+                    </div>
+                    <Link
+                      href="/resources/supported-documents"
+                      onClick={() => setActiveDropdown(null)}
+                      className="text-blue-600 dark:text-blue-400 font-bold hover:underline flex items-center gap-1"
+                    >
+                      <span>View Supported Documents Directory →</span>
                     </Link>
                   </div>
                 </div>
               )}
             </div>
 
+            {/* 3. How It Works */}
             <Link
               href="/how-it-works"
-              className="px-3.5 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-[#0f2942] dark:hover:text-white rounded-md transition-colors"
+              onClick={() => setActiveDropdown(null)}
+              className={`px-3.5 py-2 text-sm font-semibold rounded-lg transition-colors ${
+                isHowItWorksActive
+                  ? "text-blue-600 dark:text-blue-400 bg-blue-50/80 dark:bg-blue-950/50"
+                  : "text-[#0f2942] dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+              }`}
             >
               {t("nav.howItWorks", "How It Works")}
             </Link>
 
-            {/* Verification Trigger */}
+            {/* 4. Verification Trigger & Dropdown */}
             <div className="relative">
               <button
                 type="button"
                 id="verification-btn"
                 onClick={() => toggleDropdown("verification")}
                 aria-expanded={activeDropdown === "verification"}
-                className="px-3.5 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-[#0f2942] dark:hover:text-white rounded-md flex items-center gap-1.5 transition-colors"
+                className={`px-3.5 py-2 text-sm font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  isVerificationActive || activeDropdown === "verification"
+                    ? "text-blue-600 dark:text-blue-400 bg-blue-50/80 dark:bg-blue-950/50"
+                    : "text-[#0f2942] dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                }`}
               >
                 {t("nav.verification", "Verification")}
                 <ChevronDown
-                  className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-150 ${
-                    activeDropdown === "verification" ? "rotate-180 text-[#0f2942] dark:text-white" : ""
+                  className={`w-3.5 h-3.5 transition-transform duration-150 ${
+                    activeDropdown === "verification" ? "rotate-180 text-blue-600 dark:text-blue-400" : "text-slate-400"
                   }`}
                 />
               </button>
 
               {activeDropdown === "verification" && (
-                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-[540px] bg-white dark:bg-slate-900 rounded-xl shadow-card-3d border border-slate-200/90 dark:border-slate-800 p-6 z-50 animate-fadeIn">
+                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-[560px] max-w-[95vw] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200/90 dark:border-slate-800 p-6 z-50 animate-fadeIn">
                   <div className="grid grid-cols-2 gap-6">
                     <div>
                       <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3 px-2 flex items-center gap-1.5">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> {t("verificationMenu.methods", "How Verification Works")}
+                        <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" /> {t("verificationMenu.methods", "Verification Methods")}
                       </h4>
                       <ul className="space-y-1">
                         <li>
                           <Link
                             href="/dashboard"
                             onClick={(e) => handleProtectedClick(e, "/dashboard")}
-                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400"
+                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                           >
-                            Document Verification
+                            Document Verification Console
                           </Link>
                         </li>
                         <li>
                           <Link
                             href="/verification/process"
                             onClick={() => setActiveDropdown(null)}
-                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400"
+                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                           >
                             Verification Process
                           </Link>
@@ -426,7 +565,7 @@ export default function Navbar() {
                           <Link
                             href="/verification/statuses"
                             onClick={() => setActiveDropdown(null)}
-                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400"
+                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                           >
                             Verification Statuses
                           </Link>
@@ -434,8 +573,8 @@ export default function Navbar() {
                         <li>
                           <Link
                             href="/platform/integrity-checks"
-                            onClick={(e) => handleProtectedClick(e, "/platform/integrity-checks")}
-                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400"
+                            onClick={() => setActiveDropdown(null)}
+                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                           >
                             Integrity Checks
                           </Link>
@@ -445,14 +584,14 @@ export default function Navbar() {
 
                     <div>
                       <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3 px-2 flex items-center gap-1.5">
-                        <Shield className="w-3.5 h-3.5" /> {t("verificationMenu.coverage", "Verification Sources")}
+                        <Shield className="w-3.5 h-3.5 text-emerald-600" /> {t("verificationMenu.coverage", "Verification Sources")}
                       </h4>
                       <ul className="space-y-1">
                         <li>
                           <Link
                             href="/verification/issuer-verification"
                             onClick={() => setActiveDropdown(null)}
-                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400"
+                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                           >
                             Issuer Verification
                           </Link>
@@ -461,7 +600,7 @@ export default function Navbar() {
                           <Link
                             href="/verification/qr-code"
                             onClick={() => setActiveDropdown(null)}
-                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400"
+                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                           >
                             QR / Code Verification
                           </Link>
@@ -470,7 +609,7 @@ export default function Navbar() {
                           <Link
                             href="/verification/digilocker"
                             onClick={() => setActiveDropdown(null)}
-                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400"
+                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                           >
                             DigiLocker Integration
                           </Link>
@@ -479,7 +618,7 @@ export default function Navbar() {
                           <Link
                             href="/verification/supported-issuers"
                             onClick={() => setActiveDropdown(null)}
-                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400"
+                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                           >
                             Supported Issuers
                           </Link>
@@ -489,7 +628,10 @@ export default function Navbar() {
                   </div>
 
                   <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 px-2">
-                    <span className="text-amber-700 dark:text-amber-400 font-medium">Maharashtra Pilot Coverage Active</span>
+                    <span className="text-amber-700 dark:text-amber-400 font-medium flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                      Maharashtra Pilot Coverage Active
+                    </span>
                     <Link
                       href="/verification/coverage"
                       onClick={() => setActiveDropdown(null)}
@@ -502,36 +644,40 @@ export default function Navbar() {
               )}
             </div>
 
-            {/* Resources Trigger */}
+            {/* 5. Resources Trigger & Dropdown */}
             <div className="relative">
               <button
                 type="button"
                 id="resources-btn"
                 onClick={() => toggleDropdown("resources")}
                 aria-expanded={activeDropdown === "resources"}
-                className="px-3.5 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-[#0f2942] dark:hover:text-white rounded-md flex items-center gap-1.5 transition-colors"
+                className={`px-3.5 py-2 text-sm font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  isResourcesActive || activeDropdown === "resources"
+                    ? "text-blue-600 dark:text-blue-400 bg-blue-50/80 dark:bg-blue-950/50"
+                    : "text-[#0f2942] dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                }`}
               >
                 {t("nav.resources", "Resources")}
                 <ChevronDown
-                  className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-150 ${
-                    activeDropdown === "resources" ? "rotate-180 text-[#0f2942] dark:text-white" : ""
+                  className={`w-3.5 h-3.5 transition-transform duration-150 ${
+                    activeDropdown === "resources" ? "rotate-180 text-blue-600 dark:text-blue-400" : "text-slate-400"
                   }`}
                 />
               </button>
 
               {activeDropdown === "resources" && (
-                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-[500px] bg-white dark:bg-slate-900 rounded-xl shadow-card-3d border border-slate-200/90 dark:border-slate-800 p-6 z-50 animate-fadeIn">
+                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-[520px] max-w-[95vw] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200/90 dark:border-slate-800 p-6 z-50 animate-fadeIn">
                   <div className="grid grid-cols-2 gap-6">
                     <div>
                       <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3 px-2 flex items-center gap-1.5">
-                        <FileText className="w-3.5 h-3.5" /> {t("resourcesMenu.requirements", "Documents")}
+                        <FileText className="w-3.5 h-3.5 text-blue-600" /> {t("resourcesMenu.requirements", "Documents")}
                       </h4>
                       <ul className="space-y-1">
                         <li>
                           <Link
                             href="/resources/supported-documents"
                             onClick={() => setActiveDropdown(null)}
-                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400"
+                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                           >
                             Supported Documents
                           </Link>
@@ -540,7 +686,7 @@ export default function Navbar() {
                           <Link
                             href="/resources/document-requirements"
                             onClick={() => setActiveDropdown(null)}
-                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400"
+                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                           >
                             Document Requirements
                           </Link>
@@ -549,7 +695,7 @@ export default function Navbar() {
                           <Link
                             href="/resources/document-guidelines"
                             onClick={() => setActiveDropdown(null)}
-                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400"
+                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                           >
                             Document Guidelines
                           </Link>
@@ -559,14 +705,14 @@ export default function Navbar() {
 
                     <div>
                       <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3 px-2 flex items-center gap-1.5">
-                        <HelpCircle className="w-3.5 h-3.5" /> Help
+                        <HelpCircle className="w-3.5 h-3.5 text-indigo-600" /> Help &amp; Support
                       </h4>
                       <ul className="space-y-1">
                         <li>
                           <Link
                             href="/help"
                             onClick={() => setActiveDropdown(null)}
-                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400"
+                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                           >
                             Help Center
                           </Link>
@@ -575,7 +721,7 @@ export default function Navbar() {
                           <Link
                             href="/faq"
                             onClick={() => setActiveDropdown(null)}
-                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400"
+                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                           >
                             Frequently Asked Questions
                           </Link>
@@ -584,7 +730,7 @@ export default function Navbar() {
                           <Link
                             href="/contact"
                             onClick={() => setActiveDropdown(null)}
-                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400"
+                            className="block px-2.5 py-2 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                           >
                             Contact Us
                           </Link>
@@ -607,9 +753,15 @@ export default function Navbar() {
               )}
             </div>
 
+            {/* 6. About */}
             <Link
               href="/about"
-              className="px-3.5 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-[#0f2942] dark:hover:text-white rounded-md transition-colors"
+              onClick={() => setActiveDropdown(null)}
+              className={`px-3.5 py-2 text-sm font-semibold rounded-lg transition-colors ${
+                isAboutActive
+                  ? "text-blue-600 dark:text-blue-400 bg-blue-50/80 dark:bg-blue-950/50"
+                  : "text-[#0f2942] dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+              }`}
             >
               {t("nav.about", "About")}
             </Link>
@@ -1005,7 +1157,11 @@ export default function Navbar() {
           <Link
             href="/"
             onClick={() => setMobileMenuOpen(false)}
-            className="block px-3 py-2 rounded-md text-base font-semibold text-[#0f2942] dark:text-white bg-slate-50 dark:bg-slate-800"
+            className={`block px-3 py-2 rounded-md text-base font-semibold ${
+              isHomeActive
+                ? "text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60"
+                : "text-[#0f2942] dark:text-white hover:bg-slate-50 dark:hover:bg-slate-800"
+            }`}
           >
             {t("nav.home", "Home")}
           </Link>
@@ -1015,52 +1171,40 @@ export default function Navbar() {
             <button
               type="button"
               onClick={() => toggleMobileSubmenu("solutions")}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-md text-base font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-base font-semibold cursor-pointer ${
+                isSolutionsActive
+                  ? "text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60"
+                  : "text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
+              }`}
             >
               <span>{t("nav.solutions", "Solutions")}</span>
               <ChevronDown className={`w-4 h-4 transition-transform ${mobileSubmenu === "solutions" ? "rotate-180" : ""}`} />
             </button>
+
             {mobileSubmenu === "solutions" && (
               <div className="pl-4 pr-2 py-2 space-y-3 bg-slate-50/50 dark:bg-slate-800/40 rounded-lg mt-1 text-sm">
                 <div>
-                  <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-1">
-                    {t("solutionsMenu.forStudents", "For Individuals")}
+                  <span className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider block mb-1">
+                    Individual &amp; Personal
                   </span>
                   <div className="pl-2 space-y-1">
-                    <Link href="/solutions/document-analysis" onClick={(e) => { handleProtectedClick(e, "/solutions/document-analysis"); }} className="block py-1 text-slate-600 dark:text-slate-300 hover:text-blue-600">
+                    <Link href="/solutions/document-analysis" onClick={() => setMobileMenuOpen(false)} className="block py-1 text-slate-600 dark:text-slate-300 hover:text-blue-600">
                       Document Analysis
                     </Link>
-                    <Link href="/solutions/student-graduate-documents" onClick={(e) => { handleProtectedClick(e, "/solutions/student-graduate-documents"); }} className="block py-1 text-slate-600 dark:text-slate-300 hover:text-blue-600">
+                    <Link href="/solutions/student-graduate-documents" onClick={() => setMobileMenuOpen(false)} className="block py-1 text-slate-600 dark:text-slate-300 hover:text-blue-600">
                       Student &amp; Graduate
                     </Link>
-                    <Link href="/solutions/personal-documents" onClick={(e) => { handleProtectedClick(e, "/solutions/personal-documents"); }} className="block py-1 text-slate-600 dark:text-slate-300 hover:text-blue-600">
+                    <Link href="/solutions/personal-documents" onClick={() => setMobileMenuOpen(false)} className="block py-1 text-slate-600 dark:text-slate-300 hover:text-blue-600">
                       Personal Documents
                     </Link>
                   </div>
                 </div>
 
                 <div>
-                  <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-1">
-                    {t("solutionsMenu.forUniversities", "For Organizations")}
+                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider block mb-1">
+                    Government &amp; Institutions
                   </span>
                   <div className="pl-2 space-y-2">
-                    <div>
-                      <button
-                        type="button"
-                        onClick={() => setMobileOrgItem((prev) => (prev === "universities" ? null : "universities"))}
-                        className="w-full flex items-center justify-between py-1 text-slate-600 dark:text-slate-300 font-medium cursor-pointer"
-                      >
-                        <span>Universities &amp; Colleges</span>
-                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${mobileOrgItem === "universities" ? "rotate-180" : ""}`} />
-                      </button>
-                      {mobileOrgItem === "universities" && (
-                        <div className="pl-3 py-1 space-y-1 text-xs border-l-2 border-blue-200 dark:border-blue-800 ml-1">
-                          <Link href="/solutions/universities-colleges/supported-universities" onClick={() => setMobileMenuOpen(false)} className="block py-1 text-slate-500 dark:text-slate-400 hover:text-blue-600">Supported Universities</Link>
-                          <Link href="/solutions/universities-colleges/supported-colleges" onClick={() => setMobileMenuOpen(false)} className="block py-1 text-slate-500 dark:text-slate-400 hover:text-blue-600">Supported Colleges</Link>
-                        </div>
-                      )}
-                    </div>
-
                     <div>
                       <button
                         type="button"
@@ -1072,33 +1216,51 @@ export default function Navbar() {
                       </button>
                       {mobileOrgItem === "govdocs" && (
                         <div className="pl-3 py-1 space-y-1 text-xs border-l-2 border-blue-200 dark:border-blue-800 ml-1">
-                          <Link href="/solutions/government-documents/identity" onClick={(e) => { handleProtectedClick(e, "/solutions/government-documents/identity"); }} className="block py-1 text-slate-500 dark:text-slate-400 hover:text-blue-600">Identity Documents</Link>
-                          <Link href="/solutions/government-documents/address" onClick={(e) => { handleProtectedClick(e, "/solutions/government-documents/address"); }} className="block py-1 text-slate-500 dark:text-slate-400 hover:text-blue-600">Address Documents</Link>
-                          <Link href="/solutions/government-documents/educational" onClick={(e) => { handleProtectedClick(e, "/solutions/government-documents/educational"); }} className="block py-1 text-slate-500 dark:text-slate-400 hover:text-blue-600">Educational Documents</Link>
-                          <Link href="/solutions/government-documents/income-financial" onClick={(e) => { handleProtectedClick(e, "/solutions/government-documents/income-financial"); }} className="block py-1 text-slate-500 dark:text-slate-400 hover:text-blue-600">Income &amp; Financial</Link>
-                          <Link href="/solutions/government-documents/caste-category" onClick={(e) => { handleProtectedClick(e, "/solutions/government-documents/caste-category"); }} className="block py-1 text-slate-500 dark:text-slate-400 hover:text-blue-600">Caste / Category</Link>
-                          <Link href="/solutions/government-documents/employment-service" onClick={(e) => { handleProtectedClick(e, "/solutions/government-documents/employment-service"); }} className="block py-1 text-slate-500 dark:text-slate-400 hover:text-blue-600">Employment / Service</Link>
-                          <Link href="/solutions/government-documents/other-certificates" onClick={(e) => { handleProtectedClick(e, "/solutions/government-documents/other-certificates"); }} className="block py-1 text-slate-500 dark:text-slate-400 hover:text-blue-600">Other Certificates</Link>
+                          <Link href="/solutions/government-documents" onClick={() => setMobileMenuOpen(false)} className="block py-1 font-semibold text-blue-600 dark:text-blue-400">All Government Documents Overview</Link>
+                          <Link href="/solutions/government-documents/identity" onClick={() => setMobileMenuOpen(false)} className="block py-1 text-slate-500 dark:text-slate-400 hover:text-blue-600">Identity Documents</Link>
+                          <Link href="/solutions/government-documents/address" onClick={() => setMobileMenuOpen(false)} className="block py-1 text-slate-500 dark:text-slate-400 hover:text-blue-600">Address Documents</Link>
+                          <Link href="/solutions/government-documents/educational" onClick={() => setMobileMenuOpen(false)} className="block py-1 text-slate-500 dark:text-slate-400 hover:text-blue-600">Educational Documents</Link>
+                          <Link href="/solutions/government-documents/income-financial" onClick={() => setMobileMenuOpen(false)} className="block py-1 text-slate-500 dark:text-slate-400 hover:text-blue-600">Income &amp; Financial</Link>
+                          <Link href="/solutions/government-documents/caste-category" onClick={() => setMobileMenuOpen(false)} className="block py-1 text-slate-500 dark:text-slate-400 hover:text-blue-600">Caste / Category</Link>
+                          <Link href="/solutions/government-documents/employment-service" onClick={() => setMobileMenuOpen(false)} className="block py-1 text-slate-500 dark:text-slate-400 hover:text-blue-600">Employment / Service</Link>
+                          <Link href="/solutions/government-documents/other-certificates" onClick={() => setMobileMenuOpen(false)} className="block py-1 text-slate-500 dark:text-slate-400 hover:text-blue-600">Other Certificates</Link>
                         </div>
                       )}
                     </div>
 
-                    <Link href="/solutions/authorized-verifiers" onClick={(e) => { handleProtectedClick(e, "/solutions/authorized-verifiers"); }} className="block py-1 text-slate-600 dark:text-slate-300 hover:text-blue-600">
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => setMobileOrgItem((prev) => (prev === "universities" ? null : "universities"))}
+                        className="w-full flex items-center justify-between py-1 text-slate-600 dark:text-slate-300 font-medium cursor-pointer"
+                      >
+                        <span>Universities &amp; Colleges</span>
+                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${mobileOrgItem === "universities" ? "rotate-180" : ""}`} />
+                      </button>
+                      {mobileOrgItem === "universities" && (
+                        <div className="pl-3 py-1 space-y-1 text-xs border-l-2 border-indigo-200 dark:border-indigo-800 ml-1">
+                          <Link href="/solutions/universities-colleges" onClick={() => setMobileMenuOpen(false)} className="block py-1 font-semibold text-indigo-600 dark:text-indigo-400">Portal Overview</Link>
+                          <Link href="/solutions/universities-colleges/supported-universities" onClick={() => setMobileMenuOpen(false)} className="block py-1 text-slate-500 dark:text-slate-400 hover:text-blue-600">Supported Universities</Link>
+                          <Link href="/solutions/universities-colleges/supported-colleges" onClick={() => setMobileMenuOpen(false)} className="block py-1 text-slate-500 dark:text-slate-400 hover:text-blue-600">Supported Colleges</Link>
+                        </div>
+                      )}
+                    </div>
+
+                    <Link href="/solutions/authorized-verifiers" onClick={() => setMobileMenuOpen(false)} className="block py-1 text-slate-600 dark:text-slate-300 hover:text-blue-600">
                       Authorized Verifiers
                     </Link>
                   </div>
                 </div>
 
                 <div>
-                  <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-1">
+                  <span className="text-xs font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wider block mb-1">
                     Platform Capabilities
                   </span>
                   <div className="pl-2 space-y-1">
-                    <Link href="/platform/document-analysis" onClick={(e) => { handleProtectedClick(e, "/platform/document-analysis"); }} className="block py-1 text-slate-600 dark:text-slate-300 hover:text-blue-600">Document Analysis</Link>
-                    <Link href="/platform/information-extraction" onClick={(e) => { handleProtectedClick(e, "/platform/information-extraction"); }} className="block py-1 text-slate-600 dark:text-slate-300 hover:text-blue-600">Information Extraction</Link>
-                    <Link href="/platform/document-comparison" onClick={(e) => { handleProtectedClick(e, "/platform/document-comparison"); }} className="block py-1 text-slate-600 dark:text-slate-300 hover:text-blue-600">Document Comparison</Link>
-                    <Link href="/platform/integrity-checks" onClick={(e) => { handleProtectedClick(e, "/platform/integrity-checks"); }} className="block py-1 text-slate-600 dark:text-slate-300 hover:text-blue-600">Integrity Checks</Link>
-                    <Link href="/platform/verification-workflows" onClick={(e) => { handleProtectedClick(e, "/platform/verification-workflows"); }} className="block py-1 text-slate-600 dark:text-slate-300 hover:text-blue-600">Verification Workflows</Link>
+                    <Link href="/platform/information-extraction" onClick={() => setMobileMenuOpen(false)} className="block py-1 text-slate-600 dark:text-slate-300 hover:text-blue-600">Information Extraction</Link>
+                    <Link href="/platform/document-comparison" onClick={() => setMobileMenuOpen(false)} className="block py-1 text-slate-600 dark:text-slate-300 hover:text-blue-600">Document Comparison</Link>
+                    <Link href="/platform/integrity-checks" onClick={() => setMobileMenuOpen(false)} className="block py-1 text-slate-600 dark:text-slate-300 hover:text-blue-600">Integrity &amp; Tamper Checks</Link>
+                    <Link href="/platform/verification-workflows" onClick={() => setMobileMenuOpen(false)} className="block py-1 text-slate-600 dark:text-slate-300 hover:text-blue-600">Verification Workflows</Link>
                   </div>
                 </div>
 
@@ -1114,7 +1276,11 @@ export default function Navbar() {
           <Link
             href="/how-it-works"
             onClick={() => setMobileMenuOpen(false)}
-            className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
+            className={`block px-3 py-2 rounded-md text-base font-semibold ${
+              isHowItWorksActive
+                ? "text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60"
+                : "text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
+            }`}
           >
             {t("nav.howItWorks", "How It Works")}
           </Link>
@@ -1124,11 +1290,16 @@ export default function Navbar() {
             <button
               type="button"
               onClick={() => toggleMobileSubmenu("verification")}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-md text-base font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-base font-semibold cursor-pointer ${
+                isVerificationActive
+                  ? "text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60"
+                  : "text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
+              }`}
             >
               <span>{t("nav.verification", "Verification")}</span>
               <ChevronDown className={`w-4 h-4 transition-transform ${mobileSubmenu === "verification" ? "rotate-180" : ""}`} />
             </button>
+
             {mobileSubmenu === "verification" && (
               <div className="pl-4 pr-2 py-2 space-y-3 bg-slate-50/50 dark:bg-slate-800/40 rounded-lg mt-1 text-sm">
                 <div>
@@ -1139,7 +1310,7 @@ export default function Navbar() {
                     <Link href="/dashboard" onClick={(e) => { handleProtectedClick(e, "/dashboard"); }} className="block py-1 text-slate-600 dark:text-slate-300 hover:text-blue-600">Document Verification</Link>
                     <Link href="/verification/process" onClick={() => setMobileMenuOpen(false)} className="block py-1 text-slate-600 dark:text-slate-300 hover:text-blue-600">Verification Process</Link>
                     <Link href="/verification/statuses" onClick={() => setMobileMenuOpen(false)} className="block py-1 text-slate-600 dark:text-slate-300 hover:text-blue-600">Verification Statuses</Link>
-                    <Link href="/platform/integrity-checks" onClick={(e) => { handleProtectedClick(e, "/platform/integrity-checks"); }} className="block py-1 text-slate-600 dark:text-slate-300 hover:text-blue-600">Integrity Checks</Link>
+                    <Link href="/platform/integrity-checks" onClick={() => setMobileMenuOpen(false)} className="block py-1 text-slate-600 dark:text-slate-300 hover:text-blue-600">Integrity Checks</Link>
                   </div>
                 </div>
 
@@ -1169,11 +1340,16 @@ export default function Navbar() {
             <button
               type="button"
               onClick={() => toggleMobileSubmenu("resources")}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-md text-base font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-base font-semibold cursor-pointer ${
+                isResourcesActive
+                  ? "text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60"
+                  : "text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
+              }`}
             >
               <span>{t("nav.resources", "Resources")}</span>
               <ChevronDown className={`w-4 h-4 transition-transform ${mobileSubmenu === "resources" ? "rotate-180" : ""}`} />
             </button>
+
             {mobileSubmenu === "resources" && (
               <div className="pl-4 pr-2 py-2 space-y-1 bg-slate-50/50 dark:bg-slate-800/40 rounded-lg mt-1 text-sm">
                 <Link href="/resources/supported-documents" onClick={() => setMobileMenuOpen(false)} className="block py-1.5 text-slate-600 dark:text-slate-300 hover:text-blue-600">Supported Documents</Link>
@@ -1189,7 +1365,11 @@ export default function Navbar() {
           <Link
             href="/about"
             onClick={() => setMobileMenuOpen(false)}
-            className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
+            className={`block px-3 py-2 rounded-md text-base font-semibold ${
+              isAboutActive
+                ? "text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60"
+                : "text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
+            }`}
           >
             {t("nav.about", "About")}
           </Link>
