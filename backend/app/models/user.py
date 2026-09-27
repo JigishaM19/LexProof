@@ -83,3 +83,4 @@ class SendOtpRequest(BaseModel):
 class VerifyOtpRequest(BaseModel):
     identifier: str
     otp: str
+    purpose: Optional[str] = "REGISTRATION"

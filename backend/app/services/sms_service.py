@@ -15,8 +15,9 @@ class SMSService:
         provider = (settings.SMS_PROVIDER or "").strip().lower()
 
         if not provider:
-            logger.warning(f"[SMS FALLBACK] SMS gateway not configured. OTP for {to_mobile}: {otp_code}")
-            return True, "SMS verification code generated."
+            msg = "SMS gateway is not configured on this server. Please choose Email OTP verification."
+            logger.info(f"SMS dispatch skipped: {msg}")
+            return False, msg
 
         if provider == "twilio":
             account_sid = (settings.TWILIO_ACCOUNT_SID or "").strip()

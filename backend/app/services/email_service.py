@@ -59,8 +59,9 @@ class EmailService:
         sender_name = (settings.RESEND_SENDER_NAME or "LexProof Verification").strip()
 
         if not api_key:
-            logger.warning(f"[EMAIL FALLBACK] RESEND_API_KEY not set. OTP for {to_email}: {otp_code}")
-            return True, "Verification code generated and recorded. (Development Mode)"
+            err = "RESEND_API_KEY is not configured on this server."
+            logger.error(err)
+            return False, err
 
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -81,11 +82,11 @@ class EmailService:
                     return True, "Email successfully delivered via Resend."
                 else:
                     err_msg = res.text
-                    logger.warning(f"Resend delivery notice (Status {res.status_code}): {err_msg}. OTP for {to_email}: {otp_code}")
-                    return True, "Verification code dispatched."
+                    logger.error(f"Resend API error (Status {res.status_code}): {err_msg}")
+                    return False, f"Resend API error: {err_msg}"
         except Exception as e:
-            logger.error(f"Network error communicating with Resend: {e}. OTP for {to_email}: {otp_code}")
-            return True, "Verification code dispatched."
+            logger.error(f"Network error communicating with Resend: {e}")
+            return False, f"Email delivery failed: {str(e)}"
 
     @classmethod
     async def dispatch_email(cls, to_email: str, subject: str, html_body: str, otp_code: str = "") -> Tuple[bool, str]:

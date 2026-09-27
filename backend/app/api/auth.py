@@ -128,7 +128,7 @@ async def verify_otp(req: VerifyOtpRequest):
     if not otp:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Please enter your 6-digit verification code.")
 
-    success, message, meta = await OTPService.verify_otp(identifier, otp)
+    success, message, meta = await OTPService.verify_otp(identifier, otp, purpose=req.purpose or "REGISTRATION")
     if not success:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
 
