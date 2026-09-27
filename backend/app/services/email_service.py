@@ -20,7 +20,7 @@ class EmailService:
         host = settings.SMTP_HOST or "smtp.gmail.com"
         port = int(settings.SMTP_PORT or 587)
         user = (settings.SMTP_USER or "").strip()
-        password = (settings.SMTP_PASSWORD or "").strip()
+        password = (settings.SMTP_PASSWORD or "").strip().replace(" ", "")
         from_name = (settings.SMTP_FROM_NAME or "LexProof Verification").strip()
         from_email = (settings.SMTP_FROM_EMAIL or user).strip()
 
@@ -89,7 +89,7 @@ class EmailService:
 
     @classmethod
     async def dispatch_email(cls, to_email: str, subject: str, html_body: str, otp_code: str = "") -> Tuple[bool, str]:
-        """Dispatches email using configured provider (SMTP/Gmail first, then Resend, then fallback)."""
+        """Dispatches real email using configured provider (SMTP / Gmail or Resend)."""
         smtp_user = (settings.SMTP_USER or "").strip()
         smtp_password = (settings.SMTP_PASSWORD or "").strip()
 
@@ -97,9 +97,13 @@ class EmailService:
             success, msg = await asyncio.to_thread(cls._send_smtp_sync, to_email, subject, html_body)
             if success:
                 return True, msg
-            logger.warning(f"SMTP delivery failed ({msg}), attempting Resend fallback...")
+            logger.error(f"SMTP delivery error to {to_email}: {msg}")
+            return False, msg
 
-        return await cls._send_resend(to_email, subject, html_body, otp_code=otp_code)
+        if settings.RESEND_API_KEY:
+            return await cls._send_resend(to_email, subject, html_body, otp_code=otp_code)
+
+        return False, "Email service is not configured (SMTP_USER/SMTP_PASSWORD or RESEND_API_KEY required)."
 
     @classmethod
     async def send_verification_otp(cls, to_email: str, otp_code: str) -> Tuple[bool, str]:
