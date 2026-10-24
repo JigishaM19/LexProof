@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   Building2,
   ShieldCheck,
@@ -9,27 +10,64 @@ import {
   Users,
   Layers,
   ArrowRight,
-  ExternalLink,
   Plus,
   RefreshCw,
   Search,
   CheckCircle2,
-  Clock,
-  Sparkles,
   Inbox,
-  Lock,
+  Loader2,
 } from "lucide-react";
-import { api, User as UserType } from "@/lib/api";
+import { api, User as UserType, BatchVerificationRecord } from "@/lib/api";
 
 export default function OrganizationOverviewPage() {
+  const pathname = usePathname();
+  const basePath = pathname.startsWith("/admin") ? "/admin" : "/organization";
+
   const [user, setUser] = useState<UserType | null>(null);
+  const [batches, setBatches] = useState<BatchVerificationRecord[]>([]);
+  const [connectedRailsCount, setConnectedRailsCount] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      const currentUser = api.getCurrentUser();
+      setUser(currentUser);
+
+      const [batchList, coverage] = await Promise.allSettled([
+        api.listBatchVerifications(),
+        api.getCoverage(),
+      ]);
+
+      if (batchList.status === "fulfilled") {
+        setBatches(batchList.value || []);
+      }
+      if (coverage.status === "fulfilled") {
+        setConnectedRailsCount(coverage.value?.total_active_pilot || 0);
+      }
+    } catch (e) {
+      console.error("Failed to load organization data:", e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const u = api.getCurrentUser();
-    setUser(u);
-    setIsLoading(false);
+    loadData();
   }, []);
+
+  const totalCandidates = batches.reduce((sum, b) => sum + (b.total_candidates || 0), 0);
+  const verifiedRecords = batches.reduce((sum, b) => sum + (b.verified_candidates || 0), 0);
+  const activeBatches = batches.filter(
+    (b) => b.status === "PENDING" || b.status === "NEEDS_REVIEW"
+  ).length;
+
+  const filteredBatches = batches.filter(
+    (b) =>
+      b.batch_title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      b.target_institution.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -70,8 +108,15 @@ export default function OrganizationOverviewPage() {
         </div>
 
         <div className="flex items-center gap-2.5 self-start md:self-auto">
+          <button
+            onClick={loadData}
+            className="p-2 text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+            title="Refresh metrics and batches"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
+          </button>
           <Link
-            href="/organization/verifications"
+            href={`${basePath}/verifications`}
             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#0f2942] dark:bg-purple-700 text-white hover:bg-slate-800 dark:hover:bg-purple-800 text-xs font-semibold transition-colors shadow-xs"
           >
             <Plus className="w-3.5 h-3.5 text-purple-200" />
@@ -80,15 +125,19 @@ export default function OrganizationOverviewPage() {
         </div>
       </div>
 
-      {/* Real Metric Summary Cards (Strict Real Data - Zero Fakes) */}
+      {/* Real Metric Summary Cards (Strict Real Data - Zero Hardcode) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
-            <span className="text-[11px] font-semibold uppercase">Active Batches</span>
+            <span className="text-[11px] font-semibold uppercase">Total Batches</span>
             <Layers className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
           </div>
-          <div className="text-2xl font-bold text-slate-900 dark:text-white mt-1.5">0</div>
-          <span className="text-[10px] text-slate-400 block mt-0.5">In progress</span>
+          <div className="text-2xl font-bold text-slate-900 dark:text-white mt-1.5">
+            {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : batches.length}
+          </div>
+          <span className="text-[10px] text-slate-400 block mt-0.5">
+            {activeBatches} active / review
+          </span>
         </div>
 
         <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
@@ -96,7 +145,9 @@ export default function OrganizationOverviewPage() {
             <span className="text-[11px] font-semibold uppercase">Verified Records</span>
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
           </div>
-          <div className="text-2xl font-bold text-emerald-700 dark:text-emerald-300 mt-1.5">0</div>
+          <div className="text-2xl font-bold text-emerald-700 dark:text-emerald-300 mt-1.5">
+            {isLoading ? <Loader2 className="w-5 h-5 animate-spin text-emerald-600" /> : verifiedRecords}
+          </div>
           <span className="text-[10px] text-emerald-700 dark:text-emerald-400 block mt-0.5">Rail confirmed</span>
         </div>
 
@@ -105,7 +156,9 @@ export default function OrganizationOverviewPage() {
             <span className="text-[11px] font-semibold uppercase">Total Candidates</span>
             <Users className="w-3.5 h-3.5 text-slate-600 dark:text-slate-300" />
           </div>
-          <div className="text-2xl font-bold text-slate-900 dark:text-white mt-1.5">0</div>
+          <div className="text-2xl font-bold text-slate-900 dark:text-white mt-1.5">
+            {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : totalCandidates}
+          </div>
           <span className="text-[10px] text-slate-400 block mt-0.5">Enrolled dossiers</span>
         </div>
 
@@ -114,14 +167,16 @@ export default function OrganizationOverviewPage() {
             <span className="text-[11px] font-semibold uppercase">Connected Rails</span>
             <ShieldCheck className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
           </div>
-          <div className="text-2xl font-bold text-slate-900 dark:text-white mt-1.5">4</div>
+          <div className="text-2xl font-bold text-slate-900 dark:text-white mt-1.5">
+            {isLoading ? <Loader2 className="w-5 h-5 animate-spin text-blue-600" /> : connectedRailsCount}
+          </div>
           <span className="text-[10px] text-blue-600 dark:text-blue-400 block mt-0.5">Active pilot rails</span>
         </div>
       </div>
 
-      {/* Institutional Verification Section (Authentic Clean Empty State) */}
+      {/* Institutional Verification Section */}
       <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xs border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col">
-        <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/60 dark:bg-slate-800/40">
+        <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/60 dark:bg-slate-800/40">
           <div>
             <h2 className="text-sm font-bold text-slate-900 dark:text-white">
               Institutional Verification Requests
@@ -131,50 +186,127 @@ export default function OrganizationOverviewPage() {
             </p>
           </div>
 
-          <div className="relative w-56 hidden sm:block">
+          <div className="relative w-full sm:w-64">
             <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Search request ID or candidate..."
-              disabled
-              className="w-full pl-8 pr-2.5 py-1 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 rounded-lg cursor-not-allowed"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search request ID or university..."
+              className="w-full pl-8 pr-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-500"
             />
           </div>
         </div>
 
-        {/* Clean Empty State */}
-        <div className="p-12 text-center flex flex-col items-center justify-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center">
-            <Inbox className="w-6 h-6" />
+        {isLoading ? (
+          <div className="p-12 text-center flex flex-col items-center justify-center gap-3">
+            <Loader2 className="w-6 h-6 text-purple-600 animate-spin" />
+            <p className="text-xs text-slate-500">Loading verification records...</p>
           </div>
-          <h3 className="text-sm font-semibold text-slate-800 dark:text-white">
-            No institutional verification requests yet
-          </h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm">
-            Initialize your first candidate verification batch to verify student or employee academic records directly against university registrar rails.
-          </p>
-          <div className="flex items-center gap-3 mt-2">
-            <Link
-              href="/organization/verifications"
-              className="px-3.5 py-1.5 rounded-lg bg-[#0f2942] dark:bg-purple-700 text-white text-xs font-semibold hover:bg-slate-800 transition-colors"
-            >
-              Start Batch Request
-            </Link>
-            <Link
-              href="/verification/coverage"
-              className="px-3.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold hover:bg-slate-200 transition-colors"
-            >
-              View Rail Coverage
-            </Link>
+        ) : filteredBatches.length === 0 ? (
+          <div className="p-12 text-center flex flex-col items-center justify-center gap-3">
+            <div className="w-12 h-12 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+              <Inbox className="w-6 h-6" />
+            </div>
+            <h3 className="text-sm font-semibold text-slate-800 dark:text-white">
+              {searchQuery ? "No matching verification batches found" : "No institutional verification requests yet"}
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm">
+              {searchQuery
+                ? `No batches matching "${searchQuery}". Clear your search query to see all records.`
+                : "Initialize your first candidate verification batch to verify student or employee academic records directly against university registrar rails."}
+            </p>
+            <div className="flex items-center gap-3 mt-2">
+              <Link
+                href={`${basePath}/verifications`}
+                className="px-3.5 py-1.5 rounded-lg bg-[#0f2942] dark:bg-purple-700 text-white text-xs font-semibold hover:bg-slate-800 transition-colors"
+              >
+                Start Batch Request
+              </Link>
+              <Link
+                href="/verification/coverage"
+                className="px-3.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold hover:bg-slate-200 transition-colors"
+              >
+                View Rail Coverage
+              </Link>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800">
+                <tr>
+                  <th className="py-3 px-4 font-semibold">Batch Details</th>
+                  <th className="py-3 px-4 font-semibold">Target University</th>
+                  <th className="py-3 px-4 font-semibold">Candidates</th>
+                  <th className="py-3 px-4 font-semibold">Status</th>
+                  <th className="py-3 px-4 font-semibold">Created</th>
+                  <th className="py-3 px-4 font-semibold text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {filteredBatches.map((b) => (
+                  <tr
+                    key={b.id}
+                    className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
+                  >
+                    <td className="py-3 px-4">
+                      <div className="font-semibold text-slate-900 dark:text-white">
+                        {b.batch_title}
+                      </div>
+                      <div className="text-[11px] text-slate-400">{b.purpose}</div>
+                    </td>
+                    <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
+                      {b.target_institution}
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold text-slate-900 dark:text-white">
+                          {b.verified_candidates} / {b.total_candidates}
+                        </span>
+                        <span className="text-[10px] text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded font-semibold">
+                          Verified
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        {b.status}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-slate-500 font-mono text-[11px]">
+                      {new Date(b.created_at).toLocaleDateString()}
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <Link
+                        href={`${basePath}/verifications`}
+                        className="text-purple-600 dark:text-purple-400 hover:underline font-semibold"
+                      >
+                        Inspect Batch →
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Connected Authoritative Rails Status Card */}
       <div className="bg-white dark:bg-slate-900 rounded-xl p-5 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col gap-3">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-          Institutional Rail Connectivity
-        </h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Institutional Rail Connectivity
+          </h3>
+          <Link
+            href="/verification/coverage"
+            className="text-xs text-purple-600 dark:text-purple-400 hover:underline font-semibold flex items-center gap-1"
+          >
+            Explore All Supported Issuers <ArrowRight className="w-3 h-3" />
+          </Link>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {[
             {

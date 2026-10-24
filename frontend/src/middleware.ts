@@ -25,10 +25,11 @@ export function middleware(request: NextRequest) {
 
   const isIndividualRoute = pathname === "/individual" || pathname.startsWith("/individual/");
   const isOrganizationRoute = pathname === "/organization" || pathname.startsWith("/organization/");
+  const isAdminRoute = pathname === "/admin" || pathname.startsWith("/admin/");
   const isDashboardRoute = pathname === "/dashboard" || pathname.startsWith("/dashboard/");
   const isCasesRoute = pathname === "/cases" || pathname.startsWith("/cases/");
 
-  const isProtectedRoute = isIndividualRoute || isOrganizationRoute || isDashboardRoute || isCasesRoute;
+  const isProtectedRoute = isIndividualRoute || isOrganizationRoute || isAdminRoute || isDashboardRoute || isCasesRoute;
 
   if (isProtectedRoute) {
     const token = request.cookies.get("LexProof_token")?.value;
@@ -52,23 +53,20 @@ export function middleware(request: NextRequest) {
       return response;
     }
 
-    const role = (payload.role || "INDIVIDUAL").toUpperCase();
+    const rawRole = (payload.role || "USER").toUpperCase();
+    const role = rawRole === "ADMIN" ? "ADMIN" : "USER";
 
-    // 2. Legacy /dashboard redirect based on real account role
+    // 2. /dashboard redirect based on account role:
+    // ADMIN routes to Admin Console (/admin), USER (Peoples/Students) routes to User Portal (/individual)
     if (isDashboardRoute) {
-      const targetWorkspace = role === "ORGANIZATION" ? "/organization" : "/individual";
+      const targetWorkspace = role === "ADMIN" ? "/admin" : "/individual";
       return NextResponse.redirect(new URL(targetWorkspace, request.url));
     }
 
-    // 3. Strict Workspace Authorization:
-    // Individual account cannot access Organization workspace
-    if (isOrganizationRoute && role !== "ORGANIZATION") {
+    // 3. Strict Admin Route Guard:
+    // Peoples / regular user accounts cannot access the Admin Console (/admin or /organization)
+    if ((isOrganizationRoute || isAdminRoute) && role !== "ADMIN") {
       return NextResponse.redirect(new URL("/individual", request.url));
-    }
-
-    // Organization account cannot access Individual workspace
-    if (isIndividualRoute && role === "ORGANIZATION") {
-      return NextResponse.redirect(new URL("/organization", request.url));
     }
   }
 
@@ -79,6 +77,7 @@ export const config = {
   matcher: [
     "/individual/:path*",
     "/organization/:path*",
+    "/admin/:path*",
     "/dashboard/:path*",
     "/cases/:path*",
   ],

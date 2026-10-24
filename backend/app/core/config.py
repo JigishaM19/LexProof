@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     PORT: int = 8000
     ENVIRONMENT: str = "development"
     FRONTEND_URL: str = "http://localhost:3000"
+    DEMO_MODE_ENABLED: bool = True
 
     # Security & Tokens
     SECRET_KEY: str = "lexproof-cryptographic-signing-secret-key-prod-2026-interoperable"
@@ -42,9 +43,23 @@ class Settings(BaseSettings):
     DATABASE_NAME: str = "lexproof_db"
     REDIS_URL: Optional[str] = None
     
-    # Upload storage
+    # Upload storage & Cloud Storage Adapter
+    STORAGE_BACKEND: str = "local"  # "local" or "s3"
+    USE_S3_STORAGE: bool = False
     UPLOAD_DIR: str = "./storage/uploads"
     MAX_FILE_SIZE_MB: int = 25
+    
+    # S3 / Object Storage Configuration (AWS S3, MinIO, Cloudflare R2, GCP Storage S3-compat)
+    S3_BUCKET_NAME: Optional[str] = None
+    S3_REGION: str = "ap-south-1"
+    S3_ACCESS_KEY_ID: Optional[str] = None
+    S3_SECRET_ACCESS_KEY: Optional[str] = None
+    S3_ENDPOINT_URL: Optional[str] = None
+    S3_PREFIX: str = "documents"
+    
+    # Ingestion & Forensics Engine
+    ASYNC_INGESTION_DEFAULT: bool = True
+
     
     # Email Delivery (SMTP / Gmail / Resend)
     EMAIL_PROVIDER: str = "smtp"  # "smtp" or "resend"

@@ -20,19 +20,22 @@ import {
   Globe,
   Loader2,
   Info,
+  Sparkles,
+  ShieldCheck,
 } from "lucide-react";
 
 function determineAuthorizedDestination(role: string, requestedRedirect?: string | null): string {
-  const normalizedRole = (role || "INDIVIDUAL").toUpperCase();
-  const defaultTarget = normalizedRole === "ORGANIZATION" ? "/organization" : "/individual";
+  const rawRole = (role || "USER").toUpperCase();
+  const normalizedRole = rawRole === "ADMIN" ? "ADMIN" : "USER";
+  const defaultTarget = normalizedRole === "ADMIN" ? "/organization" : "/individual";
   if (!requestedRedirect || requestedRedirect === "/dashboard" || requestedRedirect === "/") {
     return defaultTarget;
   }
-  // Only honor redirect if it belongs to the user's authorized workspace
-  if (normalizedRole === "ORGANIZATION" && requestedRedirect.startsWith("/organization")) {
+  // Admin can access all workspaces; User/Peoples can access individual/cases
+  if (normalizedRole === "ADMIN") {
     return requestedRedirect;
   }
-  if (normalizedRole === "INDIVIDUAL" && (requestedRedirect.startsWith("/individual") || requestedRedirect.startsWith("/cases"))) {
+  if (normalizedRole === "USER" && (requestedRedirect.startsWith("/individual") || requestedRedirect.startsWith("/cases"))) {
     return requestedRedirect;
   }
   return defaultTarget;
@@ -50,7 +53,7 @@ function LoginFormContent() {
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [modalNotice, setModalNotice] = useState<string | null>(null);
+  const [demoLoading, setDemoLoading] = useState(false);
 
   // Sync token from Google OAuth redirect or display URL error parameter
   useEffect(() => {
@@ -103,10 +106,20 @@ function LoginFormContent() {
     }
   };
 
-  const handleExternalAuth = (provider: string) => {
-    setModalNotice(
-      `Official ${provider} authentication requires government-authorized partner credentials currently configured only in production environments. Please sign in using your registered credentials, or create an account.`
-    );
+  const [demoRoleLoading, setDemoRoleLoading] = useState<"USER" | "ADMIN" | null>(null);
+
+  const handleDemoLogin = async (demoRole: "USER" | "ADMIN" = "USER") => {
+    setErrorMsg(null);
+    setDemoRoleLoading(demoRole);
+    try {
+      const authResp = await api.demoLogin(demoRole);
+      const dest = determineAuthorizedDestination(authResp.user.role, redirectParam);
+      router.push(dest);
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to initialize demo session. Please try again.");
+    } finally {
+      setDemoRoleLoading(null);
+    }
   };
 
   return (
@@ -347,37 +360,62 @@ function LoginFormContent() {
               </div>
             </div>
 
-            {/* External Providers */}
+            {/* External / Demo Providers */}
             <div className="space-y-3">
-              {/* DigiLocker Button */}
-              <button
-                type="button"
-                onClick={() => handleExternalAuth("DigiLocker")}
-                className="w-full p-3 rounded-lg bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/90 dark:border-slate-700 transition-all flex items-center justify-between group shadow-sm text-left cursor-pointer"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-center shadow-xs">
-                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                      <rect x="2" y="4" width="20" height="16" rx="2" fill="#002A44" />
-                      <path d="M6 8h12M6 12h8M6 16h5" stroke="#93CCFF" strokeWidth="1.5" strokeLinecap="round" />
-                      <circle cx="17" cy="14" r="3" fill="#2E95DA" />
-                      <path d="M16 14l1 1 2-2" stroke="#ffffff" strokeWidth="1" strokeLinecap="round" />
-                    </svg>
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">DigiLocker</span>
-                      <span className="px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 text-[10px] font-mono rounded font-bold uppercase tracking-wider">
-                        Official Gateway
-                      </span>
+              {/* Demo Login Buttons: 1. Peoples / Student, 2. Admin */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => handleDemoLogin("USER")}
+                  disabled={demoRoleLoading !== null || loading}
+                  className="p-3 rounded-lg bg-emerald-50/80 dark:bg-emerald-950/40 hover:bg-emerald-100/80 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800/60 transition-all flex items-center justify-between group shadow-xs text-left cursor-pointer disabled:opacity-60"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-600 dark:bg-emerald-700 flex items-center justify-center text-white shrink-0">
+                      {demoRoleLoading === "USER" ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Sparkles className="w-4 h-4" />
+                      )}
                     </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      Authoritative Citizen Identity (MeriPehchaan OAuth 2.0)
-                    </p>
+                    <div>
+                      <div className="text-xs font-bold text-emerald-950 dark:text-emerald-100">
+                        Demo User
+                      </div>
+                      <div className="text-[10px] text-emerald-700/90 dark:text-emerald-300/80">
+                        Students / Peoples
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200 group-hover:translate-x-0.5 transition-all" />
-              </button>
+                  <ChevronRight className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 group-hover:translate-x-0.5 transition-all" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleDemoLogin("ADMIN")}
+                  disabled={demoRoleLoading !== null || loading}
+                  className="p-3 rounded-lg bg-purple-50/80 dark:bg-purple-950/40 hover:bg-purple-100/80 dark:hover:bg-purple-900/50 border border-purple-200 dark:border-purple-800/60 transition-all flex items-center justify-between group shadow-xs text-left cursor-pointer disabled:opacity-60"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-purple-600 dark:bg-purple-700 flex items-center justify-center text-white shrink-0">
+                      {demoRoleLoading === "ADMIN" ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <ShieldCheck className="w-4 h-4" />
+                      )}
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-purple-950 dark:text-purple-100">
+                        Demo Admin
+                      </div>
+                      <div className="text-[10px] text-purple-700/90 dark:text-purple-300/80">
+                        Platform Console
+                      </div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 group-hover:translate-x-0.5 transition-all" />
+                </button>
+              </div>
 
               {/* Google OAuth Button */}
               <button
@@ -422,33 +460,6 @@ function LoginFormContent() {
           </div>
         </div>
       </main>
-
-      {/* Honest Provider Status Modal */}
-      {modalNotice && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 max-w-md w-full p-6 space-y-4 animate-fadeIn">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 flex items-center justify-center text-amber-700 dark:text-amber-300 shrink-0">
-                <Info className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-white">Provider Notice</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Government Gateway Integration</p>
-              </div>
-            </div>
-            <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">{modalNotice}</p>
-            <div className="pt-2 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setModalNotice(null)}
-                className="px-4 py-2 bg-[#0f2942] hover:bg-[#163b5f] dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-xs font-semibold rounded-lg cursor-pointer"
-              >
-                {t("common.close", "Understand")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Global Footer */}
       <Footer />

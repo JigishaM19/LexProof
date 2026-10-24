@@ -5,12 +5,13 @@ import logging
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from app.models.contact import ContactInquiryCreate, ContactInquiryResponse
+from app.core.database import get_database
 
-logger = logging.getLogger("uvicorn.error")
+logger = logging.getLogger("LexProof.ContactService")
 
 STORAGE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "storage", "inquiries.json")
 
-# In-memory store for active session queries
+# In-memory store for active session queries and fallback
 inquiries_db: Dict[str, dict] = {}
 
 def _init_storage():
@@ -33,7 +34,6 @@ def _save_to_disk():
     """Persist inquiries to disk safely."""
     try:
         os.makedirs(os.path.dirname(STORAGE_FILE), exist_ok=True)
-        # Convert datetime objects to isoformat for JSON serialization
         serialized = []
         for item in inquiries_db.values():
             entry = dict(item)
@@ -50,7 +50,7 @@ def _save_to_disk():
 
 class ContactService:
     @staticmethod
-    def create_inquiry(
+    async def create_inquiry(
         inquiry_in: ContactInquiryCreate,
         user_id: Optional[str] = None
     ) -> ContactInquiryResponse:
@@ -71,6 +71,12 @@ class ContactService:
         inquiries_db[inquiry_id] = record
         _save_to_disk()
 
+        try:
+            db = await get_database()
+            await db["inquiries"].replace_one({"id": inquiry_id}, record, upsert=True)
+        except Exception as e:
+            logger.warning(f"Could not persist inquiry to MongoDB: {e}")
+
         logger.info(f"Contact inquiry logged: {inquiry_id} from {record['email']} ({record['inquiry_type']})")
 
         return ContactInquiryResponse(
@@ -85,37 +91,87 @@ class ContactService:
         )
 
     @staticmethod
-    def list_inquiries(limit: int = 100) -> List[ContactInquiryResponse]:
+    async def list_inquiries(limit: int = 100) -> List[ContactInquiryResponse]:
         results = []
-        # Sort newest first
-        sorted_records = sorted(
-            inquiries_db.values(),
-            key=lambda x: x["created_at"].isoformat() if isinstance(x["created_at"], datetime) else str(x["created_at"]),
-            reverse=True
-        )
-        for r in sorted_records[:limit]:
-            created = r["created_at"]
-            if isinstance(created, str):
-                try:
-                    created = datetime.fromisoformat(created)
-                except Exception:
-                    created = datetime.now(timezone.utc)
-            results.append(
-                ContactInquiryResponse(
+        try:
+            db = await get_database()
+            cursor = db["inquiries"].find({}, {"_id": 0}).sort("created_at", -1).limit(limit)
+            docs = await cursor.to_list(length=limit)
+            for r in docs:
+                created = r.get("created_at")
+                if isinstance(created, str):
+                    try:
+                        created = datetime.fromisoformat(created)
+                    except Exception:
+                        created = datetime.now(timezone.utc)
+                results.append(
+                    ContactInquiryResponse(
+                        id=r["id"],
+                        name=r["name"],
+                        email=r["email"],
+                        inquiry_type=r["inquiry_type"],
+                        message=r["message"],
+                        status=r.get("status", "RECEIVED"),
+                        user_id=r.get("user_id"),
+                        created_at=created or datetime.now(timezone.utc),
+                    )
+                )
+        except Exception as e:
+            logger.warning(f"Error reading inquiries from MongoDB: {e}")
+
+        if not results:
+            sorted_records = sorted(
+                inquiries_db.values(),
+                key=lambda x: x["created_at"].isoformat() if isinstance(x["created_at"], datetime) else str(x["created_at"]),
+                reverse=True
+            )
+            for r in sorted_records[:limit]:
+                created = r["created_at"]
+                if isinstance(created, str):
+                    try:
+                        created = datetime.fromisoformat(created)
+                    except Exception:
+                        created = datetime.now(timezone.utc)
+                results.append(
+                    ContactInquiryResponse(
+                        id=r["id"],
+                        name=r["name"],
+                        email=r["email"],
+                        inquiry_type=r["inquiry_type"],
+                        message=r["message"],
+                        status=r.get("status", "RECEIVED"),
+                        user_id=r.get("user_id"),
+                        created_at=created,
+                    )
+                )
+
+        return results
+
+    @staticmethod
+    async def get_inquiry(inquiry_id: str) -> Optional[ContactInquiryResponse]:
+        try:
+            db = await get_database()
+            r = await db["inquiries"].find_one({"id": inquiry_id}, {"_id": 0})
+            if r:
+                created = r.get("created_at")
+                if isinstance(created, str):
+                    try:
+                        created = datetime.fromisoformat(created)
+                    except Exception:
+                        created = datetime.now(timezone.utc)
+                return ContactInquiryResponse(
                     id=r["id"],
                     name=r["name"],
                     email=r["email"],
                     inquiry_type=r["inquiry_type"],
                     message=r["message"],
-                    status=r["status"],
+                    status=r.get("status", "RECEIVED"),
                     user_id=r.get("user_id"),
-                    created_at=created,
+                    created_at=created or datetime.now(timezone.utc),
                 )
-            )
-        return results
+        except Exception:
+            pass
 
-    @staticmethod
-    def get_inquiry(inquiry_id: str) -> Optional[ContactInquiryResponse]:
         record = inquiries_db.get(inquiry_id)
         if not record:
             return None
@@ -131,7 +187,7 @@ class ContactService:
             email=record["email"],
             inquiry_type=record["inquiry_type"],
             message=record["message"],
-            status=record["status"],
+            status=record.get("status", "RECEIVED"),
             user_id=record.get("user_id"),
             created_at=created,
         )

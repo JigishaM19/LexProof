@@ -93,7 +93,7 @@ export function IndividualNavbar() {
                   LexProof
                 </span>
                 <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/60">
-                  Individual
+                  Student & Peoples
                 </span>
               </div>
             </Link>
@@ -240,7 +240,7 @@ export function IndividualNavbar() {
                         {currentUser?.full_name || "Individual"}
                       </span>
                       <span className="px-1.5 py-0.2 text-[9px] font-bold uppercase rounded bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
-                        Individual
+                        {currentUser?.role || "USER"}
                       </span>
                     </div>
                     <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5 font-mono">
@@ -255,7 +255,7 @@ export function IndividualNavbar() {
                       className="flex items-center gap-2 w-full px-2.5 py-1.5 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                     >
                       <Layers className="w-3.5 h-3.5 text-slate-400" />
-                      <span>Individual Workspace</span>
+                      <span>User Workspace</span>
                     </Link>
 
                     <Link

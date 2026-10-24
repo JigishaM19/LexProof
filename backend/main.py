@@ -8,6 +8,8 @@ from app.api.cases import router as cases_router
 from app.api.documents import router as documents_router
 from app.api.verification import router as verification_router
 from app.api.contact import router as contact_router
+from app.api.locations import router as locations_router
+from app.api.academic import router as academic_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -50,6 +52,8 @@ app.include_router(cases_router, prefix=settings.API_V1_STR)
 app.include_router(documents_router, prefix=settings.API_V1_STR)
 app.include_router(verification_router, prefix=settings.API_V1_STR)
 app.include_router(contact_router, prefix=settings.API_V1_STR)
+app.include_router(locations_router, prefix=settings.API_V1_STR)
+app.include_router(academic_router, prefix=settings.API_V1_STR)
 
 if __name__ == "__main__":
     import uvicorn

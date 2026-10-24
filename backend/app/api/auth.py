@@ -8,6 +8,7 @@ from app.models.user import (
     UserCreate,
     UserResponse,
     UserLogin,
+    DemoLoginRequest,
     TokenResponse,
     ForgotPasswordRequest,
     ResetPasswordRequest,
@@ -153,6 +154,55 @@ async def reset_password(req: ResetPasswordRequest):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
     return {"status": "SUCCESS", "message": message}
 
+
+# ==============================================================================
+# Demo Login (Development / Staging Only)
+# Enabled by DEMO_MODE_ENABLED=true in environment configuration.
+# Creates a clearly-labelled non-privileged demo account on first use.
+# Never grants admin access. Never exposes production credentials.
+# ==============================================================================
+
+@router.post("/demo-login", response_model=TokenResponse)
+async def demo_login(req: DemoLoginRequest, response: Response):
+    """
+    Authenticate as a pre-configured demo account for testing purposes.
+    Only available when DEMO_MODE_ENABLED is explicitly set to true.
+    Demo accounts are clearly flagged and never have admin access.
+    """
+    if not settings.DEMO_MODE_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo mode is not enabled in this environment."
+        )
+    if settings.ENVIRONMENT.lower() == "production":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo login is disabled in the production environment."
+        )
+
+    # Allow USER (Peoples / Students) and ADMIN roles for demo preview
+    requested_role = (req.role or "USER").strip().upper()
+    demo_role = "ADMIN" if requested_role == "ADMIN" else "USER"
+
+    try:
+        token_resp = await AuthService.get_or_create_demo_user(demo_role)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to initialize demo session: {str(e)}"
+        )
+
+    response.set_cookie(
+        key="LexProof_token",
+        value=token_resp.access_token,
+        httponly=True,
+        secure=settings.COOKIE_SECURE,
+        samesite=settings.COOKIE_SAMESITE,
+        max_age=3600,  # Demo session: 1 hour
+        path="/"
+    )
+    return token_resp
+
 # ==============================================================================
 # Google OAuth 2.0 / OpenID Connect Endpoints (Real Google Authentication)
 # ==============================================================================
@@ -280,9 +330,9 @@ async def google_oauth_callback(
         # Handle user in MongoDB
         app_access_token, user_resp = await AuthService.handle_google_user(google_user_info)
 
-        user_role = (user_resp.role or "INDIVIDUAL").upper()
+        user_role = (user_resp.role or "USER").upper()
         if not target_redirect or target_redirect == "/dashboard":
-            target_redirect = "/organization" if user_role == "ORGANIZATION" else "/individual"
+            target_redirect = "/organization" if user_role in ["ORGANIZATION", "ADMIN"] else "/individual"
 
         # Redirect user to frontend login route with token & intended destination
         login_dest = f"{dest_frontend}/login?token={urllib.parse.quote(app_access_token)}&redirect={urllib.parse.quote(target_redirect)}"

@@ -1,110 +1,109 @@
-import httpx
 import sys
-import time
+import os
+sys.path.insert(0, os.path.abspath("backend"))
+sys.path.insert(0, os.path.abspath("."))
+import asyncio
+from datetime import datetime, timezone, timedelta
+from app.core.database import connect_to_mongo, close_mongo_connection, get_database
+from app.services.otp_service import OTPService
+from app.services.email_service import EmailService
+from app.services.sms_service import SMSService
+from app.services.auth_service import AuthService
 
-BASE_URL = "http://127.0.0.1:8000/api/v1/auth"
+async def main():
+    await connect_to_mongo()
+    db = await get_database()
+    otps = db['otps']
+    
+    print('=====================================================')
+    print('1. REAL EMAIL OTP DISPATCH VIA GMAIL SMTP (techtitans2426@gmail.com)')
+    print('=====================================================')
+    recipient_1 = 'techtitans2426@gmail.com'
+    await otps.delete_many({'identifier': recipient_1})
+    
+    s1, m1, meta1 = await OTPService.send_otp(recipient_1, 'REGISTRATION', 'EMAIL')
+    print('Send OTP result:', s1, m1)
+    assert s1 is True, f"Failed: {m1}"
+    
+    print('\n=====================================================')
+    print('2. INVALID OTP REJECTION TEST')
+    print('=====================================================')
+    v_bad, m_bad, _ = await OTPService.verify_otp(recipient_1, '999999', 'REGISTRATION')
+    print('Verify bad OTP (999999):', v_bad, m_bad)
+    assert v_bad is False
+    
+    print('\n=====================================================')
+    print('3. EXPIRED OTP REJECTION TEST')
+    print('=====================================================')
+    expired_email = 'expired_user_test@gmail.com'
+    await otps.delete_many({'identifier': expired_email})
+    await OTPService.send_otp(expired_email, 'REGISTRATION', 'EMAIL')
+    
+    await otps.update_one(
+        {'identifier': expired_email, 'purpose': 'REGISTRATION'},
+        {'$set': {'expires_at': datetime.now(timezone.utc) - timedelta(minutes=1)}}
+    )
+    v_exp, m_exp, _ = await OTPService.verify_otp(expired_email, '123456', 'REGISTRATION')
+    print('Verify expired OTP:', v_exp, m_exp)
+    assert v_exp is False
+    
+    print('\n=====================================================')
+    print('4. RESEND OTP TEST & PREVIOUS OTP INVALIDATION')
+    print('=====================================================')
+    user_resend = 'resend_user_test@gmail.com'
+    await otps.delete_many({'identifier': user_resend})
+    
+    await OTPService.send_otp(user_resend, 'REGISTRATION', 'EMAIL')
+    doc_1 = await otps.find_one({'identifier': user_resend, 'purpose': 'REGISTRATION'})
+    old_hash = doc_1['otp_hash']
+    
+    await otps.update_one(
+        {'identifier': user_resend, 'purpose': 'REGISTRATION'},
+        {'$set': {'last_sent_at': datetime.now(timezone.utc) - timedelta(seconds=65)}}
+    )
+    
+    await OTPService.resend_otp(user_resend, 'REGISTRATION')
+    doc_2 = await otps.find_one({'identifier': user_resend, 'purpose': 'REGISTRATION'})
+    new_hash = doc_2['otp_hash']
+    
+    print('Old OTP hash != New OTP hash:', old_hash != new_hash)
+    assert old_hash != new_hash
+    
+    print('\n=====================================================')
+    print('5. MULTIPLE USERS ISOLATION TEST')
+    print('=====================================================')
+    user_a = 'user_a_test@gmail.com'
+    user_b = 'user_b_test@gmail.com'
+    await otps.delete_many({'identifier': {'$in': [user_a, user_b]}})
+    
+    await OTPService.send_otp(user_a, 'REGISTRATION', 'EMAIL')
+    await OTPService.send_otp(user_b, 'REGISTRATION', 'EMAIL')
+    
+    doc_a = await otps.find_one({'identifier': user_a, 'purpose': 'REGISTRATION'})
+    doc_b = await otps.find_one({'identifier': user_b, 'purpose': 'REGISTRATION'})
+    
+    print('User A identifier in DB:', doc_a['identifier'])
+    print('User B identifier in DB:', doc_b['identifier'])
+    assert doc_a['identifier'] != doc_b['identifier']
+    
+    print('\n=====================================================')
+    print('6. FORGOT PASSWORD OTP TEST')
+    print('=====================================================')
+    s_reset, m_reset = await AuthService.request_password_reset('techtitans2426@gmail.com')
+    print('Forgot Password Request:', s_reset, m_reset)
+    assert s_reset is True
+    
+    print('\n=====================================================')
+    print('7. UNCONFIGURED SMS PROVIDER ERROR TEST')
+    print('=====================================================')
+    sms_ok, sms_msg = await SMSService.send_sms_otp('+919876543210', '123456')
+    print('SMS Send (Unconfigured):', sms_ok, sms_msg)
+    assert sms_ok is False
+    
+    await close_mongo_connection()
+    print('\n=====================================================')
+    print('ALL COMPREHENSIVE OTP TESTS PASSED SUCCESSFULLY!')
+    print('=====================================================')
 
-def run_tests():
-    client = httpx.Client(timeout=10.0)
-    print("==================================================")
-    print("LEGALLENS END-TO-END OTP & AUTH REGISTRATION TEST")
-    print("==================================================")
-
-    # Test 1: Empty identifier
-    print("\n[TEST 1] Sending OTP with empty identifier...")
-    r = client.post(f"{BASE_URL}/send-otp", json={"identifier": ""})
-    assert r.status_code == 400, f"Expected 400, got {r.status_code}: {r.text}"
-    print(f"--> PASS: Rejection verified with: '{r.json().get('detail')}'")
-
-    # Test 2: Malformed email
-    print("\n[TEST 2] Sending OTP with malformed email...")
-    r = client.post(f"{BASE_URL}/send-otp", json={"identifier": "not-an-email"})
-    assert r.status_code == 400, f"Expected 400, got {r.status_code}: {r.text}"
-    print(f"--> PASS: Rejection verified with: '{r.json().get('detail')}'")
-
-    # Test 3: Valid email OTP dispatch
-    test_email = f"verified.student.{int(time.time())}@legallens.io"
-    print(f"\n[TEST 3] Dispatching OTP to {test_email}...")
-    r = client.post(f"{BASE_URL}/send-otp", json={"identifier": test_email})
-    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
-    data = r.json()
-    assert data["status"] == "SUCCESS"
-    assert data["cooldown_seconds"] == 60
-    assert data["expires_in_minutes"] == 10
-    debug_code = data.get("debug_code")
-    print(f"--> PASS: Dispatched via {data.get('channel')}. Delivery external: {data.get('delivered_externally')}")
-    print(f"    Delivery notes: {data.get('delivery_notes')}")
-    print(f"    Cryptographic OTP Code: {debug_code}")
-
-    # Test 4: Rate limit cooldown defense (Immediate resend attempt)
-    print("\n[TEST 4] Testing 60s rate limit cooldown on immediate resend...")
-    r = client.post(f"{BASE_URL}/resend-otp", json={"identifier": test_email})
-    assert r.status_code == 429, f"Expected 429, got {r.status_code}: {r.text}"
-    print(f"--> PASS: Rate-limited with 429: '{r.json().get('detail')}'")
-
-    # Test 5: Verify with invalid 6-digit code
-    print("\n[TEST 5] Testing invalid verification code submission...")
-    r = client.post(f"{BASE_URL}/verify-otp", json={"identifier": test_email, "otp": "000000"})
-    assert r.status_code == 400, f"Expected 400, got {r.status_code}: {r.text}"
-    print(f"--> PASS: Proper error displayed: '{r.json().get('detail')}'")
-
-    # Test 6: Verify second invalid code (attempt counter tracking)
-    print("\n[TEST 6] Testing attempt counter decrement...")
-    r = client.post(f"{BASE_URL}/verify-otp", json={"identifier": test_email, "otp": "111111"})
-    assert r.status_code == 400, f"Expected 400, got {r.status_code}: {r.text}"
-    assert "3 attempts remaining" in r.json().get("detail", ""), f"Unexpected response: {r.text}"
-    print(f"--> PASS: Attempt tracking verified: '{r.json().get('detail')}'")
-
-    # Test 7: Verify with correct code
-    print("\n[TEST 7] Verifying with genuine cryptographic code...")
-    r = client.post(f"{BASE_URL}/verify-otp", json={"identifier": test_email, "otp": debug_code})
-    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
-    assert r.json()["verified"] is True
-    print(f"--> PASS: Identity verified successfully: {r.json()}")
-
-    # Test 8: Register account with verified email
-    print(f"\n[TEST 8] Finalizing registration for {test_email}...")
-    reg_payload = {
-        "email": test_email,
-        "password": "SecurePassword2026!",
-        "full_name": "Devansh Mehta",
-        "user_type": "STUDENT",
-        "role": "INDIVIDUAL",
-        "institution": "University of Mumbai",
-        "course": "B.Tech Computer Science",
-        "branch": "Cyber Forensics",
-        "academic_year": "2024-2025",
-        "enrollment_id": "MU-CF-2024-8841",
-        "terms_accepted": True
-    }
-    r = client.post(f"{BASE_URL}/register", json=reg_payload)
-    assert r.status_code == 201, f"Expected 201, got {r.status_code}: {r.text}"
-    created_user = r.json()
-    print(f"--> PASS: User registered with ID: {created_user['id']}")
-
-    # Test 9: Login with newly registered credentials
-    print("\n[TEST 9] Logging in with new account credentials...")
-    login_payload = {
-        "identifier": test_email,
-        "password": "SecurePassword2026!"
-    }
-    r = client.post(f"{BASE_URL}/login", json=login_payload)
-    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
-    token_data = r.json()
-    token = token_data["access_token"]
-    print(f"--> PASS: Authenticated successfully! JWT Access Token received.")
-
-    # Test 10: Authenticated /me endpoint
-    print("\n[TEST 10] Fetching user profile via authenticated session...")
-    r = client.get(f"{BASE_URL}/me", headers={"Authorization": f"Bearer {token}"})
-    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
-    user_me = r.json()
-    assert user_me["email"] == test_email
-    print(f"--> PASS: Profile confirmed for: {user_me['full_name']} ({user_me['institution']})")
-
-    print("\n==================================================")
-    print("ALL 10 END-TO-END TESTS PASSED SUCCESSFULLY!")
-    print("==================================================")
-
-if __name__ == "__main__":
-    run_tests()
+if __name__ == '__main__':
+    asyncio.run(main())

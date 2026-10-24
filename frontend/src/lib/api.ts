@@ -3,17 +3,167 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v
 export interface User {
   id: string;
   email: string;
+  first_name?: string;
+  middle_name?: string;
+  last_name?: string;
   full_name: string;
+  country_code?: string;
   mobile?: string;
-  role: string;
+  role: "ADMIN" | "USER" | string;
   user_type: string;
+  country_id?: string;
+  country_name?: string;
+  state_id?: string;
+  state_name?: string;
+  district_id?: string;
+  district_name?: string;
+  subdistrict_id?: string;
+  subdistrict_name?: string;
+  city_id?: string;
+  city_name?: string;
+  pincode?: string;
+  masked_aadhaar?: string;
+  masked_abha?: string;
+  student_id_type?: string;
+  student_id_type_other?: string;
+  student_id_number?: string;
+  institution_id?: string;
+  institution_name?: string;
+  custom_institution_name?: string;
   institution?: string;
+  course_id?: string;
+  course_name?: string;
+  custom_course_name?: string;
   course?: string;
+  branch_id?: string;
+  branch_name?: string;
+  custom_branch_name?: string;
   branch?: string;
   academic_year?: string;
+  academic_semester?: string;
+  academic_status?: string;
+  academic_status_other?: string;
   enrollment_id?: string;
+  is_email_verified?: boolean;
+  is_mobile_verified?: boolean;
   is_verified: boolean;
+  is_demo_account?: boolean;
+  auth_provider?: string;
+  account_status?: string;
   created_at: string;
+  last_login?: string;
+}
+
+export interface Country {
+  id: string;
+  name: string;
+  calling_code: string;
+  iso3?: string;
+  has_states: boolean;
+  postal_label: string;
+  postal_regex?: string;
+}
+
+export interface State {
+  id: string;
+  country_id: string;
+  name: string;
+  code?: string;
+  lgd_code?: number;
+  admin_type: string;
+}
+
+export interface District {
+  id: string;
+  state_id: string;
+  country_id: string;
+  name: string;
+  headquarters?: string;
+  lgd_code?: number;
+}
+
+export interface Subdistrict {
+  id: string;
+  code: number;
+  version?: number;
+  name: string;
+  name_local?: string | null;
+  district_id: string;
+  district_code: number;
+  district_name: string;
+  state_id: string;
+  state_code?: number;
+  country_id: string;
+  census_2001_code?: string | null;
+  census_2011_code?: string | null;
+  admin_type?: string;
+}
+
+export interface City {
+  id: string;
+  district_id: string;
+  state_id: string;
+  country_id: string;
+  name: string;
+  taluka?: string;
+  default_pincode?: string;
+  admin_type: string;
+}
+
+export interface PostalCodeValidation {
+  pincode: string;
+  is_valid: boolean;
+  state_id?: string;
+  state_name?: string;
+  district_id?: string;
+  district_name?: string;
+  city_name?: string;
+  office_name?: string;
+  offices?: Array<{ office_name?: string; office_type?: string }>;
+  message: string;
+}
+
+export interface Institution {
+  id: string;
+  name: string;
+  country_id: string;
+  state_id: string;
+  district_id?: string;
+  city_id?: string;
+  institution_type: string;
+  aishe_code?: string;
+  is_autonomous: boolean;
+  supported_course_ids?: string[];
+}
+
+export interface Course {
+  id: string;
+  name: string;
+  short_name?: string;
+  category: string;
+  duration_years: number;
+  total_semesters: number;
+  is_annual_system: boolean;
+  year_options: string[];
+  semester_options: string[];
+  branches?: Branch[];
+}
+
+export interface Branch {
+  id: string;
+  course_id: string;
+  name: string;
+  short_name?: string;
+  code?: string;
+}
+
+export interface AcademicStructure {
+  course_id: string;
+  course_name: string;
+  duration_years: number;
+  is_annual_system: boolean;
+  year_options: string[];
+  semester_options: string[];
 }
 
 export interface AuthResponse {
@@ -63,6 +213,16 @@ export interface VerificationIndicator {
   source: string;
 }
 
+export interface TamperRegion {
+  id: string;
+  page: number;
+  bbox: [number, number, number, number]; // [x, y, width, height] in percentage (0 to 100)
+  label: string;
+  description: string;
+  confidence: number;
+  severity: "LOW" | "MEDIUM" | "HIGH";
+}
+
 export interface DocumentRecord {
   id: string;
   case_id: string;
@@ -72,7 +232,13 @@ export interface DocumentRecord {
   file_size_bytes: number;
   file_hash_sha256: string;
   doc_category: string;
-  status: string;
+  status: "PENDING" | "PROCESSING" | "PROCESSED" | "ERROR" | string;
+  processing_stage?: string;
+  page_count?: number;
+  tamper_detected?: boolean;
+  tamper_score?: number;
+  tamper_regions?: TamperRegion[];
+  storage_backend?: string;
   extracted_fields: Record<string, ExtractedField>;
   indicators: VerificationIndicator[];
   verification_result?: VerificationRailResult;
@@ -80,6 +246,7 @@ export interface DocumentRecord {
   created_at: string;
   updated_at: string;
 }
+
 
 export interface CaseRecord {
   id: string;
@@ -112,6 +279,56 @@ export interface CaseReportResponse {
   overall_status: string;
   audit_trail: Array<{ action: string; timestamp: string; actor: string }>;
   scope_notice: string;
+}
+
+export interface ContactInquiryCreate {
+  name: string;
+  email: string;
+  inquiry_type: string;
+  message: string;
+}
+
+export interface ContactInquiryResponse {
+  id: string;
+  name: string;
+  email: string;
+  inquiry_type: string;
+  message: string;
+  status: string;
+  user_id?: string;
+  created_at: string;
+}
+
+export interface CandidateEntry {
+  candidate_name: string;
+  roll_number: string;
+  degree?: string;
+  passing_year?: string;
+  status: string;
+  rail_source?: string;
+  notes?: string;
+}
+
+export interface BatchVerificationCreate {
+  batch_title: string;
+  target_institution: string;
+  purpose?: string;
+  candidates: CandidateEntry[];
+}
+
+export interface BatchVerificationRecord {
+  id: string;
+  user_id: string;
+  organization_name: string;
+  batch_title: string;
+  target_institution: string;
+  purpose: string;
+  status: string;
+  total_candidates: number;
+  verified_candidates: number;
+  candidates: CandidateEntry[];
+  created_at: string;
+  updated_at: string;
 }
 
 class ApiClient {
@@ -313,11 +530,14 @@ class ApiClient {
   }
 
   // Document Upload & Operations
-  async uploadDocument(file: File, caseId?: string): Promise<DocumentRecord> {
+  async uploadDocument(file: File, caseId?: string, asyncMode?: boolean): Promise<DocumentRecord> {
     const formData = new FormData();
     formData.append("file", file);
     if (caseId) {
       formData.append("case_id", caseId);
+    }
+    if (asyncMode !== undefined) {
+      formData.append("async_mode", String(asyncMode));
     }
     return this.request<DocumentRecord>("/documents/upload", {
       method: "POST",
@@ -327,6 +547,32 @@ class ApiClient {
 
   async getDocument(docId: string): Promise<DocumentRecord> {
     return this.request<DocumentRecord>(`/documents/${docId}`);
+  }
+
+  async getDocumentStatus(docId: string): Promise<{
+    id: string;
+    status: string;
+    processing_stage: string;
+    tamper_detected: boolean;
+    tamper_score: number;
+    tamper_regions: TamperRegion[];
+    page_count: number;
+    indicators: VerificationIndicator[];
+    extracted_fields: Record<string, ExtractedField>;
+    updated_at: string;
+  }> {
+    return this.request(`/documents/${docId}/status`);
+  }
+
+  async reprocessDocument(docId: string, asyncMode: boolean = true): Promise<{
+    message: string;
+    document_id: string;
+    status: string;
+    processing_stage?: string;
+  }> {
+    return this.request(`/documents/${docId}/reprocess?async_mode=${asyncMode}`, {
+      method: "POST",
+    });
   }
 
   getDocumentFileUrl(docId: string): string {
@@ -376,6 +622,135 @@ class ApiClient {
       method: "POST",
       body: JSON.stringify(payload),
     });
+  }
+
+  // Demo Login
+  async demoLogin(role: string = "USER"): Promise<AuthResponse> {
+    const data = await this.request<AuthResponse>("/auth/demo-login", {
+      method: "POST",
+      body: JSON.stringify({ role }),
+    });
+    this.setToken(data.access_token);
+    this.setCurrentUser(data.user);
+    return data;
+  }
+
+  // Location APIs
+  async getCountries(): Promise<Country[]> {
+    return this.request<Country[]>("/locations/countries");
+  }
+
+  async getStates(countryId: string = "IN"): Promise<State[]> {
+    return this.request<State[]>(`/locations/states?countryId=${encodeURIComponent(countryId)}`);
+  }
+
+  async getDistricts(stateId: string): Promise<District[]> {
+    return this.request<District[]>(`/locations/districts?stateId=${encodeURIComponent(stateId)}`);
+  }
+
+  async getSubdistricts(districtId: string): Promise<Subdistrict[]> {
+    return this.request<Subdistrict[]>(`/locations/subdistricts?districtId=${encodeURIComponent(districtId)}`);
+  }
+
+  async getCities(districtId: string): Promise<City[]> {
+    return this.request<City[]>(`/locations/cities?districtId=${encodeURIComponent(districtId)}`);
+  }
+
+  async validatePostalCode(pincode: string, countryId: string = "IN"): Promise<PostalCodeValidation> {
+    return this.request<PostalCodeValidation>(
+      `/locations/postal-codes?pincode=${encodeURIComponent(pincode)}&countryId=${encodeURIComponent(countryId)}`
+    );
+  }
+
+  // Academic APIs
+  async getInstitutions(params?: {
+    stateId?: string;
+    districtId?: string;
+    cityId?: string;
+    countryId?: string;
+    q?: string;
+    limit?: number;
+  }): Promise<{ institutions: Institution[]; allow_custom: boolean; custom_label: string }> {
+    const qp = new URLSearchParams();
+    if (params?.stateId) qp.set("stateId", params.stateId);
+    if (params?.districtId) qp.set("districtId", params.districtId);
+    if (params?.cityId) qp.set("cityId", params.cityId);
+    if (params?.countryId) qp.set("countryId", params.countryId);
+    if (params?.q) qp.set("q", params.q);
+    if (params?.limit) qp.set("limit", String(params.limit));
+    const qs = qp.toString() ? `?${qp.toString()}` : "";
+    return this.request<{ institutions: Institution[]; allow_custom: boolean; custom_label: string }>(
+      `/academic/institutions${qs}`
+    );
+  }
+
+  async getCourses(params?: {
+    institutionId?: string;
+    q?: string;
+    limit?: number;
+  }): Promise<{ courses: Course[]; allow_custom: boolean; custom_label: string }> {
+    const qp = new URLSearchParams();
+    if (params?.institutionId) qp.set("institutionId", params.institutionId);
+    if (params?.q) qp.set("q", params.q);
+    if (params?.limit) qp.set("limit", String(params.limit));
+    const qs = qp.toString() ? `?${qp.toString()}` : "";
+    return this.request<{ courses: Course[]; allow_custom: boolean; custom_label: string }>(
+      `/academic/courses${qs}`
+    );
+  }
+
+  async getBranches(params: {
+    courseId: string;
+    institutionId?: string;
+    q?: string;
+    limit?: number;
+  }): Promise<{ branches: Branch[]; allow_custom: boolean; custom_label: string }> {
+    const qp = new URLSearchParams();
+    qp.set("courseId", params.courseId);
+    if (params.institutionId) qp.set("institutionId", params.institutionId);
+    if (params.q) qp.set("q", params.q);
+    if (params.limit) qp.set("limit", String(params.limit));
+    return this.request<{ branches: Branch[]; allow_custom: boolean; custom_label: string }>(
+      `/academic/branches?${qp.toString()}`
+    );
+  }
+
+  async getAcademicStructure(params: {
+    courseId: string;
+    institutionId?: string;
+  }): Promise<AcademicStructure> {
+    const qp = new URLSearchParams();
+    qp.set("courseId", params.courseId);
+    if (params.institutionId) qp.set("institutionId", params.institutionId);
+    return this.request<AcademicStructure>(`/academic/structure?${qp.toString()}`);
+  }
+
+  // Contact Inquiries
+  async submitContactInquiry(inquiry: ContactInquiryCreate): Promise<ContactInquiryResponse> {
+    return this.request<ContactInquiryResponse>("/contact/inquiry", {
+      method: "POST",
+      body: JSON.stringify(inquiry),
+    });
+  }
+
+  async listContactInquiries(limit: number = 50): Promise<ContactInquiryResponse[]> {
+    return this.request<ContactInquiryResponse[]>(`/contact/inquiries?limit=${limit}`);
+  }
+
+  // Organization Batch Verifications
+  async createBatchVerification(batch: BatchVerificationCreate): Promise<BatchVerificationRecord> {
+    return this.request<BatchVerificationRecord>("/verification/batches", {
+      method: "POST",
+      body: JSON.stringify(batch),
+    });
+  }
+
+  async listBatchVerifications(): Promise<BatchVerificationRecord[]> {
+    return this.request<BatchVerificationRecord[]>("/verification/batches");
+  }
+
+  async getBatchVerification(batchId: string): Promise<BatchVerificationRecord> {
+    return this.request<BatchVerificationRecord>(`/verification/batches/${batchId}`);
   }
 }
 

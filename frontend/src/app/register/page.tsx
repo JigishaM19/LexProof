@@ -1,98 +1,482 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, Suspense, useCallback } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import Navbar, { LexProofLogo } from "@/components/layout/Navbar";
+import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import { useI18n } from "@/lib/i18n";
-import { api } from "@/lib/api";
+import {
+  api,
+  Country,
+  State,
+  District,
+  Subdistrict,
+  City,
+  Institution,
+  Course,
+  Branch,
+  AcademicStructure,
+  PostalCodeValidation,
+} from "@/lib/api";
 import {
   User,
-  Building2,
   Check,
   ArrowRight,
-  ArrowLeft,
-  School,
+  Building,
   GraduationCap,
-  Briefcase,
-  BadgeCheck,
-  Shield,
   Lock,
   Mail,
   Phone,
   AlertCircle,
   Loader2,
   CheckCircle2,
-  RefreshCw,
-  Info,
   Smartphone,
-  ShieldAlert,
   ShieldCheck,
+  Eye,
+  EyeOff,
+  ChevronDown,
+  Sparkles,
+  MapPin,
+  Search,
+  Hash,
+  FileText,
+  BadgeCheck,
 } from "lucide-react";
 
-function RegisterWizardContent() {
+// Verhoeff Algorithm for instant Aadhaar validation feedback
+const VERHOEFF_D = [
+  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+  [1, 2, 3, 4, 0, 6, 7, 8, 9, 5],
+  [2, 3, 4, 0, 1, 7, 8, 9, 5, 6],
+  [3, 4, 0, 1, 2, 8, 9, 5, 6, 7],
+  [4, 0, 1, 2, 3, 9, 5, 6, 7, 8],
+  [5, 9, 8, 7, 6, 0, 4, 3, 2, 1],
+  [6, 5, 9, 8, 7, 1, 0, 4, 3, 2],
+  [7, 6, 5, 9, 8, 2, 1, 0, 4, 3],
+  [8, 7, 6, 5, 9, 3, 2, 1, 0, 4],
+  [9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
+];
+const VERHOEFF_P = [
+  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+  [1, 5, 7, 6, 2, 8, 3, 0, 9, 4],
+  [5, 8, 0, 3, 7, 9, 6, 1, 4, 2],
+  [8, 9, 1, 6, 0, 4, 3, 5, 2, 7],
+  [9, 4, 5, 3, 1, 2, 6, 8, 7, 0],
+  [4, 2, 8, 6, 5, 7, 3, 9, 0, 1],
+  [2, 7, 9, 3, 8, 0, 6, 4, 1, 5],
+  [7, 0, 4, 6, 9, 1, 3, 2, 5, 8],
+];
+
+function validateVerhoeff(numStr: string): boolean {
+  if (!/^\d+$/.test(numStr)) return false;
+  let c = 0;
+  const reversedDigits = numStr.split("").map(Number).reverse();
+  for (let i = 0; i < reversedDigits.length; i++) {
+    c = VERHOEFF_D[c][VERHOEFF_P[i % 8][reversedDigits[i]]];
+  }
+  return c === 0;
+}
+
+function RegisterFormContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectParam = searchParams.get("redirect") || "/dashboard";
-  const { t, currentLanguage } = useI18n();
+  const redirectParam = searchParams.get("redirect") || "/individual";
+  const { t } = useI18n();
 
-  // Wizard state (Step 1 to 5)
-  const [step, setStep] = useState(1);
-  const [role, setRole] = useState<"INDIVIDUAL" | "ORGANIZATION">("INDIVIDUAL");
-  const [userType, setUserType] = useState("STUDENT");
+  // Step 1: Registration Form, Step 2: OTP Verification
+  const [step, setStep] = useState<1 | 2>(1);
 
-  // Step 3: Credentials Form
-  const [fullName, setFullName] = useState("");
+  // -------------------------------------------------------------------------
+  // 1. Personal Information State
+  // -------------------------------------------------------------------------
+  const [firstName, setFirstName] = useState("");
+  const [middleName, setMiddleName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
+  const [countryCode, setCountryCode] = useState("+91");
   const [mobile, setMobile] = useState("");
   const [password, setPassword] = useState("");
-  const [institution, setInstitution] = useState("University of Mumbai");
-  const [course, setCourse] = useState("Bachelor of Technology (B.Tech)");
-  const [branch, setBranch] = useState("Computer Science & Engineering");
-  const [academicYear, setAcademicYear] = useState("2024-2025");
-  const [enrollmentId, setEnrollmentId] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // Step 4: OTP State
-  const [verificationMethod, setVerificationMethod] = useState<"PHONE" | "EMAIL">("EMAIL");
+  // -------------------------------------------------------------------------
+  // 2. Geographic / Address State (Cascading Dropdowns)
+  // -------------------------------------------------------------------------
+  const [countries, setCountries] = useState<Country[]>([]);
+  const [states, setStates] = useState<State[]>([]);
+  const [districts, setDistricts] = useState<District[]>([]);
+  const [subdistricts, setSubdistricts] = useState<Subdistrict[]>([]);
+  const [cities, setCities] = useState<City[]>([]);
+
+  const [selectedCountryId, setSelectedCountryId] = useState("IN");
+  const [selectedStateId, setSelectedStateId] = useState("");
+  const [selectedDistrictId, setSelectedDistrictId] = useState("");
+  const [selectedSubdistrictId, setSelectedSubdistrictId] = useState("");
+  const [selectedSubdistrictName, setSelectedSubdistrictName] = useState("");
+  const [selectedCityId, setSelectedCityId] = useState("");
+  const [pincode, setPincode] = useState("");
+  const [pincodeStatus, setPincodeStatus] = useState<PostalCodeValidation | null>(null);
+  const [validatingPincode, setValidatingPincode] = useState(false);
+
+  // -------------------------------------------------------------------------
+  // 3. Academic & Student Information State (Dynamic Catalog)
+  // -------------------------------------------------------------------------
+  const [institutions, setInstitutions] = useState<Institution[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [academicStructure, setAcademicStructure] = useState<AcademicStructure | null>(null);
+
+  const [selectedInstitutionId, setSelectedInstitutionId] = useState("");
+  const [customInstitutionName, setCustomInstitutionName] = useState("");
+  const [selectedCourseId, setSelectedCourseId] = useState("");
+  const [customCourseName, setCustomCourseName] = useState("");
+  const [selectedBranchId, setSelectedBranchId] = useState("");
+  const [customBranchName, setCustomBranchName] = useState("");
+  const [academicYear, setAcademicYear] = useState("");
+  const [academicSemester, setAcademicSemester] = useState("");
+  const [academicStatus, setAcademicStatus] = useState("Pursuing / Active Student");
+  const [academicStatusOther, setAcademicStatusOther] = useState("");
+
+  const [studentIdType, setStudentIdType] = useState("College / University ID");
+  const [studentIdTypeOther, setStudentIdTypeOther] = useState("");
+  const [studentIdNumber, setStudentIdNumber] = useState("");
+
+  const [aadhaarNumber, setAadhaarNumber] = useState("");
+  const [abhaId, setAbhaId] = useState("");
+  const [showStudentSection, setShowStudentSection] = useState(true);
+
+  // -------------------------------------------------------------------------
+  // 4. Loading & Validation States
+  // -------------------------------------------------------------------------
+  const [loadingLocations, setLoadingLocations] = useState(false);
+  const [loadingAcademics, setLoadingAcademics] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // -------------------------------------------------------------------------
+  // 5. Step 2: OTP State
+  // -------------------------------------------------------------------------
+  const [verificationMethod, setVerificationMethod] = useState<"EMAIL" | "PHONE">("EMAIL");
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
-  const [otpVerified, setOtpVerified] = useState(false);
-  const [otpError, setOtpError] = useState<string | null>(null);
   const [otpSuccessMsg, setOtpSuccessMsg] = useState<string | null>(null);
-  const [otpLoading, setOtpLoading] = useState(false);
+  const [otpError, setOtpError] = useState<string | null>(null);
   const [sendingOtp, setSendingOtp] = useState(false);
+  const [otpLoading, setOtpLoading] = useState(false);
   const [resendTimer, setResendTimer] = useState(0);
 
-  // General Loading & Error
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  // 60-Second Cooldown Timer for Resend OTP
+  // Countdown timer for OTP Resend
   useEffect(() => {
     if (resendTimer <= 0) return;
-    const interval = setInterval(() => {
+    const timer = setInterval(() => {
       setResendTimer((prev) => (prev > 0 ? prev - 1 : 0));
     }, 1000);
-    return () => clearInterval(interval);
+    return () => clearInterval(timer);
   }, [resendTimer]);
 
-  // Step 3 -> Step 4: Dispatch Real OTP via FastAPI
-  const handleProceedToOtp = async () => {
-    if (!fullName.trim() || !email.trim() || !password) {
-      setErrorMsg("Please complete all required fields.");
+  // -------------------------------------------------------------------------
+  // Initial Data Fetch: Countries & Courses
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    async function initData() {
+      try {
+        setLoadingLocations(true);
+        const [cList, crsResp] = await Promise.all([
+          api.getCountries(),
+          api.getCourses(),
+        ]);
+        setCountries(cList || []);
+        setCourses(crsResp?.courses || []);
+
+        // Load states for default India (IN)
+        if (cList && cList.some((c) => c.id === "IN")) {
+          const sList = await api.getStates("IN");
+          setStates(sList || []);
+        }
+      } catch (err: any) {
+        console.warn("Error fetching initial location/academic catalogue:", err);
+      } finally {
+        setLoadingLocations(false);
+      }
+    }
+    initData();
+  }, []);
+
+  // When Country changes -> load States, reset lower levels & calling code
+  const handleCountryChange = async (countryId: string) => {
+    setSelectedCountryId(countryId);
+    setSelectedStateId("");
+    setSelectedDistrictId("");
+    setSelectedSubdistrictId("");
+    setSelectedSubdistrictName("");
+    setSelectedCityId("");
+    setDistricts([]);
+    setSubdistricts([]);
+    setCities([]);
+    setPincode("");
+    setPincodeStatus(null);
+
+    const cObj = countries.find((c) => c.id === countryId);
+    if (cObj && cObj.calling_code) {
+      setCountryCode(cObj.calling_code);
+    }
+
+    if (cObj?.has_states) {
+      try {
+        setLoadingLocations(true);
+        const sList = await api.getStates(countryId);
+        setStates(sList || []);
+      } catch (err) {
+        setStates([]);
+      } finally {
+        setLoadingLocations(false);
+      }
+    } else {
+      setStates([]);
+    }
+  };
+
+  // When State changes -> load Districts & filter Institutions
+  const handleStateChange = async (stateId: string) => {
+    setSelectedStateId(stateId);
+    setSelectedDistrictId("");
+    setSelectedSubdistrictId("");
+    setSelectedSubdistrictName("");
+    setSelectedCityId("");
+    setDistricts([]);
+    setSubdistricts([]);
+    setCities([]);
+
+    if (!stateId) return;
+
+    try {
+      setLoadingLocations(true);
+      const [dList, instResp] = await Promise.all([
+        api.getDistricts(stateId),
+        api.getInstitutions({ stateId, countryId: selectedCountryId }),
+      ]);
+      setDistricts(dList || []);
+      setInstitutions(instResp?.institutions || []);
+    } catch (err) {
+      console.warn("Failed loading state data:", err);
+    } finally {
+      setLoadingLocations(false);
+    }
+  };
+
+  // When District changes -> load Subdistricts, Cities & narrow Institutions
+  const handleDistrictChange = async (districtId: string) => {
+    setSelectedDistrictId(districtId);
+    setSelectedSubdistrictId("");
+    setSelectedSubdistrictName("");
+    setSelectedCityId("");
+    setSubdistricts([]);
+    setCities([]);
+
+    if (!districtId) return;
+
+    try {
+      setLoadingLocations(true);
+      const [subdistrictList, cityList, instResp] = await Promise.all([
+        api.getSubdistricts(districtId),
+        api.getCities(districtId),
+        api.getInstitutions({ districtId, stateId: selectedStateId, countryId: selectedCountryId }),
+      ]);
+      setSubdistricts(subdistrictList || []);
+      setCities(cityList || []);
+      if (instResp?.institutions && instResp.institutions.length > 0) {
+        setInstitutions(instResp.institutions);
+      }
+    } catch (err) {
+      console.warn("Failed loading district data:", err);
+    } finally {
+      setLoadingLocations(false);
+    }
+  };
+
+  // When Subdistrict changes -> store name for payload
+  const handleSubdistrictChange = (subdistrictId: string) => {
+    setSelectedSubdistrictId(subdistrictId);
+    const sdObj = subdistricts.find((sd) => sd.id === subdistrictId);
+    setSelectedSubdistrictName(sdObj?.name || "");
+  };
+
+  // Pincode validation on blur or change
+  const handlePincodeBlur = async () => {
+    const cleanPin = pincode.trim();
+    if (!cleanPin || cleanPin.length < 3) {
+      setPincodeStatus(null);
       return;
     }
-    if (password.length < 8) {
+    setValidatingPincode(true);
+    try {
+      const res = await api.validatePostalCode(cleanPin, selectedCountryId);
+      setPincodeStatus(res);
+      // Auto-populate state/district if returned and not yet chosen
+      if (res.is_valid) {
+        if (res.state_id && !selectedStateId) {
+          setSelectedStateId(res.state_id);
+          const dList = await api.getDistricts(res.state_id);
+          setDistricts(dList || []);
+        }
+        if (res.district_id && !selectedDistrictId) {
+          setSelectedDistrictId(res.district_id);
+          const cList = await api.getCities(res.district_id);
+          setCities(cList || []);
+        }
+      }
+    } catch (err) {
+      console.warn("Pincode validation notice:", err);
+    } finally {
+      setValidatingPincode(false);
+    }
+  };
+
+  // When Institution changes -> filter Courses if specific catalogue exists
+  const handleInstitutionChange = async (instId: string) => {
+    setSelectedInstitutionId(instId);
+    if (instId && instId !== "OTHER") {
+      try {
+        const crsResp = await api.getCourses({ institutionId: instId });
+        if (crsResp?.courses && crsResp.courses.length > 0) {
+          setCourses(crsResp.courses);
+        }
+      } catch (err) {
+        console.warn("Course catalog fetch notice:", err);
+      }
+    }
+  };
+
+  // When Course changes -> fetch Branches and Academic Structure
+  const handleCourseChange = async (crsId: string) => {
+    setSelectedCourseId(crsId);
+    setSelectedBranchId("");
+    setAcademicYear("");
+    setAcademicSemester("");
+
+    if (!crsId || crsId === "OTHER") {
+      setBranches([]);
+      setAcademicStructure(null);
+      return;
+    }
+
+    try {
+      setLoadingAcademics(true);
+      const [brResp, struct] = await Promise.all([
+        api.getBranches({ courseId: crsId, institutionId: selectedInstitutionId || undefined }),
+        api.getAcademicStructure({ courseId: crsId, institutionId: selectedInstitutionId || undefined }),
+      ]);
+      setBranches(brResp?.branches || []);
+      setAcademicStructure(struct || null);
+    } catch (err) {
+      console.warn("Academic structure fetch notice:", err);
+    } finally {
+      setLoadingAcademics(false);
+    }
+  };
+
+  // -------------------------------------------------------------------------
+  // Form Validation
+  // -------------------------------------------------------------------------
+  const validateForm = (): boolean => {
+    setErrorMsg(null);
+
+    if (!firstName.trim()) {
+      setErrorMsg("First name is required.");
+      return false;
+    }
+    if (!lastName.trim()) {
+      setErrorMsg("Last name is required.");
+      return false;
+    }
+
+    const nameRegex = /^[a-zA-Z\s\.\'\-]+$/;
+    if (!nameRegex.test(firstName.trim())) {
+      setErrorMsg("First name contains invalid characters. Use letters, spaces, hyphens, or periods.");
+      return false;
+    }
+    if (!nameRegex.test(lastName.trim())) {
+      setErrorMsg("Last name contains invalid characters. Use letters, spaces, hyphens, or periods.");
+      return false;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email.trim() || !emailRegex.test(email.trim())) {
+      setErrorMsg("Please enter a valid email address.");
+      return false;
+    }
+
+    const digitsOnlyMobile = mobile.replace(/\D/g, "");
+    if (!mobile.trim() || digitsOnlyMobile.length < 10 || digitsOnlyMobile.length > 15) {
+      setErrorMsg("Please enter a valid mobile number (10 to 15 digits).");
+      return false;
+    }
+
+    if (!password || password.length < 8) {
       setErrorMsg("Password must be at least 8 characters long.");
-      return;
+      return false;
     }
 
-    const target = verificationMethod === "PHONE" ? mobile.trim() : email.trim();
-    if (verificationMethod === "PHONE" && !mobile.trim()) {
-      setErrorMsg("Please enter your mobile number for Phone SMS verification, or select Email verification.");
-      return;
+    if (password !== confirmPassword) {
+      setErrorMsg("Passwords do not match. Please verify both passwords.");
+      return false;
     }
 
+    // Aadhaar Validation if entered
+    if (aadhaarNumber.trim()) {
+      const cleanAadhaar = aadhaarNumber.replace(/[\s\-]/g, "");
+      if (cleanAadhaar.length !== 12 || !/^\d+$/.test(cleanAadhaar)) {
+        setErrorMsg("Aadhaar Number must be exactly 12 digits.");
+        return false;
+      }
+      if (cleanAadhaar.startsWith("0") || cleanAadhaar.startsWith("1")) {
+        setErrorMsg("Invalid Aadhaar Number: cannot start with 0 or 1.");
+        return false;
+      }
+      if (!validateVerhoeff(cleanAadhaar)) {
+        setErrorMsg("Invalid Aadhaar Number checksum. Please double-check your 12-digit Aadhaar.");
+        return false;
+      }
+    }
+
+    // ABHA ID Validation if entered
+    if (abhaId.trim()) {
+      const cleanAbha = abhaId.replace(/[\s\-]/g, "");
+      if (cleanAbha.length !== 14 || !/^\d+$/.test(cleanAbha)) {
+        setErrorMsg("ABHA ID must be exactly 14 digits.");
+        return false;
+      }
+    }
+
+    // Custom institution requirement
+    if (selectedInstitutionId === "OTHER" && !customInstitutionName.trim()) {
+      setErrorMsg("Please enter the name of your unlisted educational institution.");
+      return false;
+    }
+
+    // Custom course requirement
+    if (selectedCourseId === "OTHER" && !customCourseName.trim()) {
+      setErrorMsg("Please enter the name of your course/degree.");
+      return false;
+    }
+
+    if (!termsAccepted) {
+      setErrorMsg("You must accept the Terms of Service and Privacy Policy to create an account.");
+      return false;
+    }
+
+    return true;
+  };
+
+  // -------------------------------------------------------------------------
+  // Step 1 -> Step 2: Send OTP
+  // -------------------------------------------------------------------------
+  const handleProceedToOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validateForm()) return;
+
+    const target = verificationMethod === "PHONE" ? mobile.trim() : email.trim().toLowerCase();
     setErrorMsg(null);
     setSendingOtp(true);
     setOtpError(null);
@@ -102,8 +486,8 @@ function RegisterWizardContent() {
       const res = await api.sendOtp(target, "REGISTRATION", verificationMethod);
       setResendTimer(res.cooldown_seconds || 60);
       setOtp(["", "", "", "", "", ""]);
-      setStep(4);
-      setOtpSuccessMsg(res.message || "A verification code has been dispatched.");
+      setStep(2);
+      setOtpSuccessMsg(res.message || "A 6-digit verification code has been dispatched.");
       setTimeout(() => {
         document.getElementById("otp-input-0")?.focus();
       }, 100);
@@ -114,14 +498,14 @@ function RegisterWizardContent() {
     }
   };
 
-  // Resend OTP via FastAPI
+  // Resend OTP
   const handleResendOtp = async () => {
     if (resendTimer > 0 || otpLoading) return;
     setOtpLoading(true);
     setOtpError(null);
     setOtpSuccessMsg(null);
 
-    const target = verificationMethod === "PHONE" ? mobile.trim() : email.trim();
+    const target = verificationMethod === "PHONE" ? mobile.trim() : email.trim().toLowerCase();
     try {
       const res = await api.resendOtp(target, "REGISTRATION", verificationMethod);
       setResendTimer(res.cooldown_seconds || 60);
@@ -137,7 +521,9 @@ function RegisterWizardContent() {
     }
   };
 
-  // OTP Input Handlers
+  // -------------------------------------------------------------------------
+  // OTP Verification & Final Account Creation
+  // -------------------------------------------------------------------------
   const handleOtpChange = (index: number, val: string) => {
     const cleaned = val.replace(/\D/g, "");
     if (!cleaned && val !== "") return;
@@ -147,16 +533,14 @@ function RegisterWizardContent() {
     setOtp(newOtp);
     setOtpError(null);
 
-    // Auto-advance
     if (cleaned && index < 5) {
       document.getElementById(`otp-input-${index + 1}`)?.focus();
     }
 
-    // Auto-verify if all 6 digits entered
     if (cleaned && index === 5) {
       const full = [...newOtp.slice(0, 5), cleaned[cleaned.length - 1]].join("");
       if (full.length === 6) {
-        triggerVerify(full);
+        finalizeRegistration(full);
       }
     }
   };
@@ -183,608 +567,927 @@ function RegisterWizardContent() {
     }
     setOtp(newOtp);
     setOtpError(null);
-
     const focusIdx = Math.min(pasteData.length, 5);
     document.getElementById(`otp-input-${focusIdx}`)?.focus();
 
     if (pasteData.length === 6) {
-      triggerVerify(pasteData);
+      finalizeRegistration(pasteData);
     }
   };
 
-  const triggerVerify = async (fullOtp: string) => {
+  const finalizeRegistration = async (fullOtp: string) => {
     setOtpLoading(true);
     setOtpError(null);
     setOtpSuccessMsg(null);
 
-    const target = verificationMethod === "PHONE" ? mobile.trim() : email.trim();
+    const target = verificationMethod === "PHONE" ? mobile.trim() : email.trim().toLowerCase();
+
     try {
+      // 1. Verify OTP with server
       await api.verifyOtp(target, fullOtp, "REGISTRATION");
-      setOtpVerified(true);
-      setOtpSuccessMsg("Identity verified successfully! Advancing to Review...");
-      setTimeout(() => {
-        setStep(5); // Proceed to Review & Consent
-      }, 700);
+      setOtpSuccessMsg("Identity verified! Completing secure account creation...");
+
+      // 2. Resolve names and descriptions
+      const countryObj = countries.find((c) => c.id === selectedCountryId);
+      const stateObj = states.find((s) => s.id === selectedStateId);
+      const districtObj = districts.find((d) => d.id === selectedDistrictId);
+      const cityObj = cities.find((ci) => ci.id === selectedCityId);
+
+      const instObj = institutions.find((i) => i.id === selectedInstitutionId);
+      const effectiveInstName = selectedInstitutionId === "OTHER"
+        ? customInstitutionName.trim()
+        : instObj?.name || "";
+
+      const crsObj = courses.find((c) => c.id === selectedCourseId);
+      const effectiveCourseName = selectedCourseId === "OTHER"
+        ? customCourseName.trim()
+        : crsObj?.name || "";
+
+      const brObj = branches.find((b) => b.id === selectedBranchId);
+      const effectiveBranchName = selectedBranchId === "OTHER"
+        ? customBranchName.trim()
+        : brObj?.name || "";
+
+      const cleanAadhaar = aadhaarNumber.replace(/[\s\-]/g, "") || undefined;
+      const cleanAbha = abhaId.replace(/[\s\-]/g, "") || undefined;
+
+      const registrationPayload = {
+        first_name: firstName.trim(),
+        middle_name: middleName.trim() || undefined,
+        last_name: lastName.trim(),
+        email: email.trim().toLowerCase(),
+        country_code: countryCode,
+        mobile: mobile.trim() || undefined,
+        password,
+        role: "USER",
+        user_type: "USER",
+        terms_accepted: true,
+
+        // Address Details
+        country_id: selectedCountryId || "IN",
+        country_name: countryObj?.name || "India",
+        state_id: selectedStateId || undefined,
+        state_name: stateObj?.name || undefined,
+        district_id: selectedDistrictId || undefined,
+        district_name: districtObj?.name || undefined,
+        subdistrict_id: selectedSubdistrictId || undefined,
+        subdistrict_name: selectedSubdistrictName || undefined,
+        city_id: selectedCityId || undefined,
+        city_name: cityObj?.name || undefined,
+        pincode: pincode.trim() || undefined,
+
+        // Student / Academic Details
+        institution_id: selectedInstitutionId && selectedInstitutionId !== "OTHER" ? selectedInstitutionId : undefined,
+        institution_name: effectiveInstName || undefined,
+        custom_institution_name: selectedInstitutionId === "OTHER" ? customInstitutionName.trim() : undefined,
+        institution: effectiveInstName || undefined,
+
+        course_id: selectedCourseId && selectedCourseId !== "OTHER" ? selectedCourseId : undefined,
+        course_name: effectiveCourseName || undefined,
+        custom_course_name: selectedCourseId === "OTHER" ? customCourseName.trim() : undefined,
+        course: effectiveCourseName || undefined,
+
+        branch_id: selectedBranchId && selectedBranchId !== "OTHER" ? selectedBranchId : undefined,
+        branch_name: effectiveBranchName || undefined,
+        custom_branch_name: selectedBranchId === "OTHER" ? customBranchName.trim() : undefined,
+        branch: effectiveBranchName || undefined,
+
+        academic_year: academicYear.trim() || undefined,
+        academic_semester: academicSemester.trim() || undefined,
+        academic_status: academicStatus === "Other" ? academicStatusOther.trim() : academicStatus || undefined,
+        academic_status_other: academicStatus === "Other" ? academicStatusOther.trim() : undefined,
+
+        student_id_type: studentIdType === "Other" ? studentIdTypeOther.trim() : studentIdType || undefined,
+        student_id_type_other: studentIdType === "Other" ? studentIdTypeOther.trim() : undefined,
+        student_id_number: studentIdNumber.trim() || undefined,
+        enrollment_id: studentIdNumber.trim() || undefined,
+
+        aadhaar_number: cleanAadhaar,
+        abha_id: cleanAbha,
+      };
+
+      // 3. Register user account
+      await api.register(registrationPayload);
+
+      // 3a. If user selected a custom (unlisted) institution, fire a background suggestion request
+      //     so the admin team can review and add it to the verified catalogue.
+      if (selectedInstitutionId === "OTHER" && customInstitutionName.trim()) {
+        const stateObj2 = states.find((s) => s.id === selectedStateId);
+        api.requestInstitution({
+          institution_name: customInstitutionName.trim(),
+          state: stateObj2?.name || selectedStateId || "Unknown",
+          applicant_email: email.trim().toLowerCase(),
+          notes: selectedCourseId === "OTHER"
+            ? `Custom course: ${customCourseName.trim()}`
+            : effectiveCourseName
+              ? `Course: ${effectiveCourseName}`
+              : undefined,
+        }).catch(() => {/* fire-and-forget: institution request is non-critical */});
+      }
+
+      // 4. Auto sign-in
+      const authResp = await api.login(email.trim().toLowerCase(), password);
+
+      // 5. Navigate to workspace
+      router.push(redirectParam || "/individual");
     } catch (err: any) {
-      setOtpError(err.message || "Invalid verification code.");
+      setOtpError(err.message || "Registration failed. Please check the code and try again.");
     } finally {
       setOtpLoading(false);
     }
   };
 
-  const handleVerifyOtp = async () => {
-    const fullOtp = otp.join("");
-    if (fullOtp.length !== 6) {
-      setOtpError("Please enter all 6 digits of your verification code.");
-      return;
-    }
-    await triggerVerify(fullOtp);
-  };
-
-  // Final Registration Submission
-  const handleFinalSubmit = async () => {
-    setErrorMsg(null);
-    setSubmitting(true);
-    try {
-      await api.register({
-        email,
-        full_name: fullName,
-        mobile: mobile || undefined,
-        password,
-        role,
-        user_type: userType,
-        institution,
-        course,
-        branch,
-        academic_year: academicYear,
-        enrollment_id: enrollmentId || undefined,
-        terms_accepted: true,
-      });
-
-      // Auto login
-      const authResp = await api.login(email, password);
-      const userRole = (authResp.user.role || role || "INDIVIDUAL").toUpperCase();
-      const defaultTarget = userRole === "ORGANIZATION" ? "/organization" : "/individual";
-      let dest = defaultTarget;
-      if (redirectParam && redirectParam !== "/dashboard" && redirectParam !== "/") {
-        if (userRole === "ORGANIZATION" && redirectParam.startsWith("/organization")) {
-          dest = redirectParam;
-        } else if (userRole === "INDIVIDUAL" && (redirectParam.startsWith("/individual") || redirectParam.startsWith("/cases"))) {
-          dest = redirectParam;
-        }
-      }
-      router.push(dest);
-    } catch (err: any) {
-      setErrorMsg(err.message || "Failed to create account.");
-      setSubmitting(false);
-    }
-  };
-
   return (
     <div className="min-h-screen flex flex-col justify-between bg-[#faf8ff] dark:bg-[#090d16] text-slate-800 dark:text-slate-100 font-sans selection:bg-blue-100 selection:text-[#0f2942] transition-colors duration-200">
-      {/* Global Navigation */}
       <Navbar />
 
-      {/* Main Body */}
-      <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 sm:py-12 flex flex-col">
-        {/* Institutional Progress Stepper */}
-        <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-4 sm:p-5 mb-8">
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+      <main className="flex-1 max-w-4xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 sm:py-12 flex flex-col">
+        {/* Header Banner */}
+        <div className="text-center max-w-xl mx-auto mb-8 space-y-2">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900/60 text-blue-700 dark:text-blue-300 text-xs font-semibold mb-2">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Authoritative Academic Verification</span>
+          </div>
+          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-[#0f2942] dark:text-white">
+            Create Your Account
+          </h1>
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            Join LexProof to securely verify educational credentials and manage tamper-proof forensic dossiers.
+          </p>
+        </div>
+
+        {/* Wizard Stepper */}
+        <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-3 sm:p-4 mb-8">
+          <div className="grid grid-cols-2 gap-4 text-xs">
             {/* Step 1 */}
-            <div className={`flex items-center gap-2.5 ${step >= 1 ? "text-[#0f2942] dark:text-white" : "text-slate-400 dark:text-slate-500"}`}>
+            <div className={`flex items-center gap-3 ${step >= 1 ? "text-[#0f2942] dark:text-white" : "text-slate-400 dark:text-slate-500"}`}>
               <div
-                className={`w-7 h-7 rounded-full flex items-center justify-center font-bold font-mono text-xs ${
-                  step > 1 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400" : step === 1 ? "bg-[#0f2942] dark:bg-blue-600 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400"
+                className={`w-8 h-8 rounded-full flex items-center justify-center font-bold font-mono text-xs transition-colors ${
+                  step > 1
+                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
+                    : "bg-[#0f2942] dark:bg-blue-600 text-white"
                 }`}
               >
                 {step > 1 ? <Check className="w-4 h-4" /> : "01"}
               </div>
               <div className="flex flex-col">
-                <span className="text-[10px] uppercase font-mono font-semibold">Step 1</span>
-                <span className="font-semibold truncate">{t.registerPage?.step1 || "Account Type"}</span>
+                <span className="text-[10px] uppercase font-mono font-semibold text-slate-400 dark:text-slate-500">Step 1</span>
+                <span className="font-semibold text-sm">Personal & Academic Details</span>
               </div>
             </div>
 
             {/* Step 2 */}
-            <div className={`flex items-center gap-2.5 ${step >= 2 ? "text-[#0f2942] dark:text-white" : "text-slate-400 dark:text-slate-500"}`}>
+            <div className={`flex items-center gap-3 ${step === 2 ? "text-[#0f2942] dark:text-white" : "text-slate-400 dark:text-slate-500"}`}>
               <div
-                className={`w-7 h-7 rounded-full flex items-center justify-center font-bold font-mono text-xs ${
-                  step > 2 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400" : step === 2 ? "bg-[#0f2942] dark:bg-blue-600 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400"
+                className={`w-8 h-8 rounded-full flex items-center justify-center font-bold font-mono text-xs transition-colors ${
+                  step === 2
+                    ? "bg-[#0f2942] dark:bg-blue-600 text-white"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500"
                 }`}
               >
-                {step > 2 ? <Check className="w-4 h-4" /> : "02"}
+                02
               </div>
               <div className="flex flex-col">
-                <span className="text-[10px] uppercase font-mono font-semibold">Step 2</span>
-                <span className="font-semibold truncate">{t.registerPage?.step2 || "Role & Track"}</span>
-              </div>
-            </div>
-
-            {/* Step 3 */}
-            <div className={`flex items-center gap-2.5 ${step >= 3 ? "text-[#0f2942] dark:text-white" : "text-slate-400 dark:text-slate-500"}`}>
-              <div
-                className={`w-7 h-7 rounded-full flex items-center justify-center font-bold font-mono text-xs ${
-                  step > 3 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400" : step === 3 ? "bg-[#0f2942] dark:bg-blue-600 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400"
-                }`}
-              >
-                {step > 3 ? <Check className="w-4 h-4" /> : "03"}
-              </div>
-              <div className="flex flex-col">
-                <span className="text-[10px] uppercase font-mono font-semibold">Step 3</span>
-                <span className="font-semibold truncate">{t.registerPage?.step3 || "Credentials"}</span>
-              </div>
-            </div>
-
-            {/* Step 4 */}
-            <div className={`flex items-center gap-2.5 ${step >= 4 ? "text-[#0f2942] dark:text-white" : "text-slate-400 dark:text-slate-500"}`}>
-              <div
-                className={`w-7 h-7 rounded-full flex items-center justify-center font-bold font-mono text-xs ${
-                  step > 4 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400" : step === 4 ? "bg-[#0f2942] dark:bg-blue-600 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400"
-                }`}
-              >
-                {step > 4 ? <Check className="w-4 h-4" /> : "04"}
-              </div>
-              <div className="flex flex-col">
-                <span className="text-[10px] uppercase font-mono font-semibold">Step 4</span>
-                <span className="font-semibold truncate">Verification</span>
-              </div>
-            </div>
-
-            {/* Step 5 */}
-            <div className={`flex items-center gap-2.5 ${step === 5 ? "text-[#0f2942] dark:text-white" : "text-slate-400 dark:text-slate-500"}`}>
-              <div
-                className={`w-7 h-7 rounded-full flex items-center justify-center font-bold font-mono text-xs ${
-                  step === 5 ? "bg-[#0f2942] dark:bg-blue-600 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400"
-                }`}
-              >
-                05
-              </div>
-              <div className="flex flex-col">
-                <span className="text-[10px] uppercase font-mono font-semibold">Step 5</span>
-                <span className="font-semibold truncate">Consent & Submit</span>
+                <span className="text-[10px] uppercase font-mono font-semibold text-slate-400 dark:text-slate-500">Step 2</span>
+                <span className="font-semibold text-sm">Security Verification</span>
               </div>
             </div>
           </div>
         </div>
 
+        {/* Global Error Notice */}
         {errorMsg && (
-          <div className="mb-6 p-4 rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 text-red-900 dark:text-red-300 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+          <div className="mb-6 p-4 rounded-xl bg-red-50 dark:bg-rose-950/40 border border-red-200 dark:border-rose-900/60 text-red-900 dark:text-rose-200 flex items-start gap-3 animate-fadeIn">
+            <AlertCircle className="w-5 h-5 text-red-600 dark:text-rose-400 shrink-0 mt-0.5" />
             <div className="text-sm font-medium">{errorMsg}</div>
           </div>
         )}
 
-        {/* =================================================================== */}
-        {/* STEP 1: Account Type Selection (Individual vs Organization)        */}
-        {/* =================================================================== */}
+        {/* ================================================================= */}
+        {/* STEP 1: Registration Form                                         */}
+        {/* ================================================================= */}
         {step === 1 && (
-          <div className="space-y-6 animate-fadeIn">
-            <div className="text-center max-w-xl mx-auto space-y-2">
-              <h1 className="text-3xl font-bold tracking-tight text-[#0f2942] dark:text-white">
-                {t.registerPage?.title || "Create your LexProof account"}
-              </h1>
-              <p className="text-sm text-slate-600 dark:text-slate-300">
-                {t.registerPage?.subtitle || "Access enterprise-grade educational document analysis and institutional verification rails."}
-              </p>
-            </div>
+          <form
+            onSubmit={handleProceedToOtp}
+            className="space-y-8 bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm animate-fadeIn"
+          >
+            {/* --------------------------------------------------------------- */}
+            {/* SECTION 1: Personal Details                                     */}
+            {/* --------------------------------------------------------------- */}
+            <div className="space-y-4">
+              <div className="border-b border-slate-200 dark:border-slate-800 pb-2 flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-[#0f2942] dark:text-white flex items-center gap-2">
+                    <User className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                    <span>Personal Details</span>
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Provide your legal name and direct contact information.
+                  </p>
+                </div>
+              </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
-              {/* Individual Card */}
-              <div
-                onClick={() => setRole("INDIVIDUAL")}
-                className={`p-6 rounded-xl border-2 transition-all cursor-pointer bg-white dark:bg-slate-900 flex flex-col justify-between ${
-                  role === "INDIVIDUAL"
-                    ? "border-[#0f2942] dark:border-blue-500 shadow-md ring-2 ring-[#0f2942]/10 dark:ring-blue-500/20"
-                    : "border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 shadow-sm"
-                }`}
-              >
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-[#0f2942] dark:text-blue-400 flex items-center justify-center">
-                      <User className="w-6 h-6" />
+              {/* Split Name Fields: First, Middle, Last Name */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    First Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    placeholder="e.g. Aditi"
+                    className="w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Middle Name <span className="font-normal text-slate-400">(Optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={middleName}
+                    onChange={(e) => setMiddleName(e.target.value)}
+                    placeholder="e.g. Kumar"
+                    className="w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Last Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    placeholder="e.g. Sharma"
+                    className="w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Email & Mobile */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Email Address *
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                      <Mail className="w-4 h-4" />
                     </div>
-                    <div
-                      className={`w-6 h-6 rounded-full flex items-center justify-center ${
-                        role === "INDIVIDUAL" ? "bg-[#0f2942] dark:bg-blue-600 text-white" : "border border-slate-300 dark:border-slate-700"
-                      }`}
+                    <input
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="aditi.sharma@example.com"
+                      className="w-full h-10 pl-9 pr-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Mobile Number (10–15 digits) *
+                  </label>
+                  <div className="relative flex">
+                    <span className="inline-flex items-center px-3 rounded-l-lg border border-r-0 border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-mono">
+                      {countryCode}
+                    </span>
+                    <input
+                      type="tel"
+                      required
+                      value={mobile}
+                      onChange={(e) => setMobile(e.target.value)}
+                      placeholder="9820012345"
+                      className="w-full h-10 px-3 rounded-r-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Passwords */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Password (min. 8 characters) *
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                      <Lock className="w-4 h-4" />
+                    </div>
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full h-10 pl-9 pr-10 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600"
                     >
-                      {role === "INDIVIDUAL" && <Check className="w-3.5 h-3.5" />}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h2 className="text-lg font-bold text-[#0f2942] dark:text-white">
-                        {t.registerPage?.roleIndividual?.split("(")[0]?.trim() || "Individual"}
-                      </h2>
-                      <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                        Personal
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
-                      For personal document analysis, credential verification, and sovereign document management.
-                    </p>
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
                   </div>
                 </div>
 
-                <div className="mt-6 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400">
-                  <span className="font-semibold text-slate-700 dark:text-slate-300">Recommended for:</span> Students, Graduates, Job Seekers, Employees
-                </div>
-              </div>
-
-              {/* Organization Card */}
-              <div
-                onClick={() => setRole("ORGANIZATION")}
-                className={`p-6 rounded-xl border-2 transition-all cursor-pointer bg-white dark:bg-slate-900 flex flex-col justify-between ${
-                  role === "ORGANIZATION"
-                    ? "border-[#0f2942] dark:border-blue-500 shadow-md ring-2 ring-[#0f2942]/10 dark:ring-blue-500/20"
-                    : "border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 shadow-sm"
-                }`}
-              >
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 text-[#0f2942] dark:text-white flex items-center justify-center">
-                      <Building2 className="w-6 h-6" />
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Confirm Password *
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                      <Lock className="w-4 h-4" />
                     </div>
-                    <div
-                      className={`w-6 h-6 rounded-full flex items-center justify-center ${
-                        role === "ORGANIZATION" ? "bg-[#0f2942] dark:bg-blue-600 text-white" : "border border-slate-300 dark:border-slate-700"
-                      }`}
+                    <input
+                      type={showConfirmPassword ? "text" : "password"}
+                      required
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full h-10 pl-9 pr-10 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600"
                     >
-                      {role === "ORGANIZATION" && <Check className="w-3.5 h-3.5" />}
-                    </div>
+                      {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h2 className="text-lg font-bold text-[#0f2942] dark:text-white">
-                        {t.registerPage?.roleOrg?.split("(")[0]?.trim() || "Organization"}
-                      </h2>
-                      <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                        Institutional
+                </div>
+              </div>
+            </div>
+
+            {/* --------------------------------------------------------------- */}
+            {/* SECTION 2: Geographic & Address Details (Cascading)             */}
+            {/* --------------------------------------------------------------- */}
+            <div className="space-y-4 pt-2">
+              <div className="border-b border-slate-200 dark:border-slate-800 pb-2">
+                <h2 className="text-lg font-bold text-[#0f2942] dark:text-white flex items-center gap-2">
+                  <MapPin className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                  <span>Geographic & Address Details</span>
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Cascading administrative location hierarchy grounded in India Post and LGD registries.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* Country */}
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Country *
+                  </label>
+                  <select
+                    value={selectedCountryId}
+                    onChange={(e) => handleCountryChange(e.target.value)}
+                    className="w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                  >
+                    {countries.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* State / Province */}
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    State / Region
+                  </label>
+                  <select
+                    value={selectedStateId}
+                    onChange={(e) => handleStateChange(e.target.value)}
+                    disabled={states.length === 0}
+                    className="w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none disabled:opacity-50"
+                  >
+                    <option value="">-- Select State --</option>
+                    {states.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* District */}
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    District
+                  </label>
+                  <select
+                    value={selectedDistrictId}
+                    onChange={(e) => handleDistrictChange(e.target.value)}
+                    disabled={districts.length === 0}
+                    className="w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none disabled:opacity-50"
+                  >
+                    <option value="">-- Select District --</option>
+                    {districts.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Subdistrict / Taluka – shows only when subdistricts are available */}
+              {subdistricts.length > 0 && (
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Subdistrict / Taluka
+                  </label>
+                  <select
+                    value={selectedSubdistrictId}
+                    onChange={(e) => handleSubdistrictChange(e.target.value)}
+                    className="w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                  >
+                    <option value="">-- Select Subdistrict / Taluka --</option>
+                    {subdistricts.map((sd) => (
+                      <option key={sd.id} value={sd.id}>
+                        {sd.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* City / Taluka */}
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    City / Taluka
+                  </label>
+                  <select
+                    value={selectedCityId}
+                    onChange={(e) => setSelectedCityId(e.target.value)}
+                    disabled={cities.length === 0}
+                    className="w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none disabled:opacity-50"
+                  >
+                    <option value="">-- Select City / Taluka --</option>
+                    {cities.map((ci) => (
+                      <option key={ci.id} value={ci.id}>
+                        {ci.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Pincode / Postal Code */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      PIN / Postal Code
+                    </label>
+                    {validatingPincode && (
+                      <span className="text-[10px] text-blue-600 flex items-center gap-1 font-mono">
+                        <Loader2 className="w-3 h-3 animate-spin" /> Verifying...
                       </span>
-                    </div>
-                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
-                      For institutions and organizations that issue, review, or verify documents at institutional scale.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-6 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400">
-                  <span className="font-semibold text-slate-700 dark:text-slate-300">Recommended for:</span> Universities, Colleges, Boards, Employers
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-6 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setStep(2)}
-                className="px-6 py-3 bg-[#0f2942] dark:bg-blue-600 hover:bg-[#163b5f] dark:hover:bg-blue-700 text-white font-semibold rounded-lg shadow-md transition-all flex items-center gap-2 cursor-pointer"
-              >
-                <span>{t.common?.next || "Continue"} ({role === "INDIVIDUAL" ? (t.registerPage?.roleIndividual?.split("(")[0]?.trim() || "Individual") : (t.registerPage?.roleOrg?.split("(")[0]?.trim() || "Organization")})</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* =================================================================== */}
-        {/* STEP 2: Role & Category Track                                      */}
-        {/* =================================================================== */}
-        {step === 2 && (
-          <div className="space-y-6 animate-fadeIn">
-            <div className="text-left space-y-1">
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#0f2942]">
-                What best describes you?
-              </h1>
-              <p className="text-sm text-slate-600">
-                Choose the track that fits your primary verification goals. This configures your document templates.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-              {/* Student */}
-              <div
-                onClick={() => setUserType("STUDENT")}
-                className={`p-5 rounded-xl border-2 cursor-pointer bg-white transition-all flex flex-col justify-between ${
-                  userType === "STUDENT" ? "border-[#0f2942] shadow-md ring-2 ring-[#0f2942]/10" : "border-slate-200"
-                }`}
-              >
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="w-10 h-10 rounded-lg bg-blue-50 text-[#0f2942] flex items-center justify-center">
-                      <School className="w-5 h-5" />
-                    </div>
-                    {userType === "STUDENT" && (
-                      <div className="w-5 h-5 rounded-full bg-[#0f2942] text-white flex items-center justify-center">
-                        <Check className="w-3 h-3" />
-                      </div>
                     )}
                   </div>
-                  <div>
-                    <h3 className="text-base font-bold text-[#0f2942]">Student</h3>
-                    <span className="text-[10px] text-blue-600 font-mono">Academic Track</span>
-                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                      Currently studying at an accredited school, college, or university.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Graduate */}
-              <div
-                onClick={() => setUserType("GRADUATE")}
-                className={`p-5 rounded-xl border-2 cursor-pointer bg-white transition-all flex flex-col justify-between ${
-                  userType === "GRADUATE" ? "border-[#0f2942] shadow-md ring-2 ring-[#0f2942]/10" : "border-slate-200"
-                }`}
-              >
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="w-10 h-10 rounded-lg bg-indigo-50 text-[#4338ca] flex items-center justify-center">
-                      <GraduationCap className="w-5 h-5" />
-                    </div>
-                    {userType === "GRADUATE" && (
-                      <div className="w-5 h-5 rounded-full bg-[#0f2942] text-white flex items-center justify-center">
-                        <Check className="w-3 h-3" />
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <h3 className="text-base font-bold text-[#0f2942]">Graduate</h3>
-                    <span className="text-[10px] text-indigo-600 font-mono">Alumni & Degree Sync</span>
-                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                      Completed education; managing and verifying degree transcripts and credentials.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Job Applicant */}
-              <div
-                onClick={() => setUserType("JOB_SEEKER")}
-                className={`p-5 rounded-xl border-2 cursor-pointer bg-white transition-all flex flex-col justify-between ${
-                  userType === "JOB_SEEKER" ? "border-[#0f2942] shadow-md ring-2 ring-[#0f2942]/10" : "border-slate-200"
-                }`}
-              >
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center">
-                      <Briefcase className="w-5 h-5" />
-                    </div>
-                    {userType === "JOB_SEEKER" && (
-                      <div className="w-5 h-5 rounded-full bg-[#0f2942] text-white flex items-center justify-center">
-                        <Check className="w-3 h-3" />
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <h3 className="text-base font-bold text-[#0f2942]">Job Applicant</h3>
-                    <span className="text-[10px] text-emerald-600 font-mono">Career & Dossier</span>
-                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                      Verifying educational background for recruitment and hiring screenings.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-6 flex justify-between">
-              <button
-                type="button"
-                onClick={() => setStep(1)}
-                className="px-5 py-2.5 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 text-sm font-semibold flex items-center gap-1.5"
-              >
-                <ArrowLeft className="w-4 h-4" /> Back
-              </button>
-              <button
-                type="button"
-                onClick={() => setStep(3)}
-                className="px-6 py-2.5 bg-[#0f2942] hover:bg-[#163b5f] text-white text-sm font-semibold rounded-lg shadow-md flex items-center gap-2"
-              >
-                Continue to Credentials <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* =================================================================== */}
-        {/* STEP 3: Personal & Academic Credentials Form                       */}
-        {/* =================================================================== */}
-        {step === 3 && (
-          <div className="space-y-6 bg-white p-6 sm:p-8 rounded-xl border border-slate-200 shadow-sm animate-fadeIn">
-            <div>
-              <h2 className="text-xl font-bold text-[#0f2942]">Personal & Academic Details</h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Enter your genuine identity credentials. These will be verified against issuer records.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-              <div className="space-y-1">
-                <label className="block font-medium text-slate-700">Full Legal Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="e.g. Rahul Patil"
-                  className="w-full h-10 px-3 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="block font-medium text-slate-700">Email Address *</label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="rahul.patil@example.com"
-                  className="w-full h-10 px-3 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="block font-medium text-slate-700">Mobile Number (India +91)</label>
-                <input
-                  type="tel"
-                  value={mobile}
-                  onChange={(e) => setMobile(e.target.value)}
-                  placeholder="9820012345"
-                  className="w-full h-10 px-3 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="block font-medium text-slate-700">Security Password *</label>
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Minimum 8 characters"
-                  className="w-full h-10 px-3 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                />
-              </div>
-
-              {/* Verification Channel Selector */}
-              <div className="sm:col-span-2 pt-2 pb-1">
-                <label className="block font-semibold text-slate-800 text-xs uppercase tracking-wider mb-2">
-                  Account Verification Channel *
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div
-                    onClick={() => setVerificationMethod("PHONE")}
-                    className={`p-3.5 rounded-xl border text-left flex items-start gap-3 transition-all cursor-pointer ${
-                      verificationMethod === "PHONE"
-                        ? "border-[#0f2942] bg-blue-50/50 shadow-sm ring-1 ring-[#0f2942]"
-                        : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50"
-                    }`}
-                  >
-                    <div className={`p-2 rounded-lg shrink-0 ${verificationMethod === "PHONE" ? "bg-[#0f2942] text-white" : "bg-slate-100 text-slate-600"}`}>
-                      <Smartphone className="w-5 h-5" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-sm text-slate-900">Phone SMS OTP</span>
-                        <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-100 text-blue-800">
-                          Direct SMS
+                  <input
+                    type="text"
+                    value={pincode}
+                    onChange={(e) => setPincode(e.target.value)}
+                    onBlur={handlePincodeBlur}
+                    placeholder="e.g. 411001"
+                    className="w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none font-mono"
+                  />
+                  {pincodeStatus && (
+                    <div className="text-[11px] mt-1 flex items-center gap-1 text-slate-500">
+                      {pincodeStatus.is_valid ? (
+                        <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-medium">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          {pincodeStatus.office_name
+                            ? `Verified: ${pincodeStatus.office_name}`
+                            : pincodeStatus.message}
                         </span>
-                      </div>
-                      <p className="text-xs text-slate-500 mt-1 leading-snug">
-                        Real 6-digit SMS delivered to your mobile via SMS gateway.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div
-                    onClick={() => setVerificationMethod("EMAIL")}
-                    className={`p-3.5 rounded-xl border text-left flex items-start gap-3 transition-all cursor-pointer ${
-                      verificationMethod === "EMAIL"
-                        ? "border-[#0f2942] bg-blue-50/50 shadow-sm ring-1 ring-[#0f2942]"
-                        : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50"
-                    }`}
-                  >
-                    <div className={`p-2 rounded-lg shrink-0 ${verificationMethod === "EMAIL" ? "bg-[#0f2942] text-white" : "bg-slate-100 text-slate-600"}`}>
-                      <Mail className="w-5 h-5" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-sm text-slate-900">Email OTP</span>
-                        <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                          Direct Mail
+                      ) : (
+                        <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1 font-medium">
+                          <AlertCircle className="w-3.5 h-3.5" />
+                          {pincodeStatus.message}
                         </span>
-                      </div>
-                      <p className="text-xs text-slate-500 mt-1 leading-snug">
-                        Cryptographic 6-digit verification code delivered directly to your email inbox via Resend.
-                      </p>
+                      )}
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
+            </div>
 
-              <div className="space-y-1 sm:col-span-2">
-                <label className="block font-medium text-slate-700">Educational Institution / University *</label>
-                <select
-                  value={institution}
-                  onChange={(e) => setInstitution(e.target.value)}
-                  className="w-full h-10 px-3 rounded-lg border border-slate-300 text-sm bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+            {/* --------------------------------------------------------------- */}
+            {/* SECTION 3: Student & Academic Credentials Section               */}
+            {/* --------------------------------------------------------------- */}
+            <div className="space-y-4 pt-2">
+              <div className="border-b border-slate-200 dark:border-slate-800 pb-2 flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-[#0f2942] dark:text-white flex items-center gap-2">
+                    <GraduationCap className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                    <span>Student & Academic Credentials</span>
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Connect your educational profile for streamlined authoritative document verification.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowStudentSection(!showStudentSection)}
+                  className="text-xs text-blue-600 dark:text-blue-400 font-medium hover:underline flex items-center gap-1"
                 >
-                  <option value="University of Mumbai">University of Mumbai</option>
-                  <option value="Savitribai Phule Pune University">Savitribai Phule Pune University</option>
-                  <option value="Maharashtra State Board of Secondary and Higher Secondary Education">
-                    Maharashtra State Board (MSBSHSE)
-                  </option>
-                  <option value="Maharashtra State Board of Technical Education">
-                    Maharashtra State Board of Technical Education (MSBTE)
-                  </option>
-                  <option value="Other Accredited Institution">Other Accredited Institution</option>
-                </select>
+                  {showStudentSection ? "Collapse" : "Expand"}
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showStudentSection ? "rotate-180" : ""}`} />
+                </button>
               </div>
 
-              <div className="space-y-1">
-                <label className="block font-medium text-slate-700">Course / Qualification</label>
-                <input
-                  type="text"
-                  value={course}
-                  onChange={(e) => setCourse(e.target.value)}
-                  placeholder="e.g. B.Tech, B.Sc, Diploma"
-                  className="w-full h-10 px-3 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                />
+              {showStudentSection && (
+                <div className="space-y-4 bg-slate-50/70 dark:bg-slate-800/40 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800">
+                  {/* Institution Dropdown */}
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      Educational Institution / University
+                    </label>
+                    <select
+                      value={selectedInstitutionId}
+                      onChange={(e) => handleInstitutionChange(e.target.value)}
+                      className="w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    >
+                      <option value="">-- Select Institution --</option>
+                      {institutions.map((inst) => (
+                        <option key={inst.id} value={inst.id}>
+                          {inst.name}
+                        </option>
+                      ))}
+                      <option value="OTHER">My institution is not listed</option>
+                    </select>
+
+                    {selectedInstitutionId === "OTHER" && (
+                      <input
+                        type="text"
+                        required
+                        value={customInstitutionName}
+                        onChange={(e) => setCustomInstitutionName(e.target.value)}
+                        placeholder="Enter full legal name of your institution / college"
+                        className="w-full h-10 px-3 mt-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none animate-fadeIn"
+                      />
+                    )}
+                  </div>
+
+                  {/* Course & Branch */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Course */}
+                    <div className="space-y-1">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        Course / Degree Programme
+                      </label>
+                      <select
+                        value={selectedCourseId}
+                        onChange={(e) => handleCourseChange(e.target.value)}
+                        className="w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                      >
+                        <option value="">-- Select Degree Programme --</option>
+                        {courses.map((crs) => (
+                          <option key={crs.id} value={crs.id}>
+                            {crs.name}
+                          </option>
+                        ))}
+                        <option value="OTHER">My course / degree is not listed</option>
+                      </select>
+
+                      {selectedCourseId === "OTHER" && (
+                        <input
+                          type="text"
+                          required
+                          value={customCourseName}
+                          onChange={(e) => setCustomCourseName(e.target.value)}
+                          placeholder="Enter your course name (e.g. B.Tech in Robotics)"
+                          className="w-full h-10 px-3 mt-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none animate-fadeIn"
+                        />
+                      )}
+                    </div>
+
+                    {/* Branch */}
+                    <div className="space-y-1">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        Branch / Specialization
+                      </label>
+                      <select
+                        value={selectedBranchId}
+                        onChange={(e) => setSelectedBranchId(e.target.value)}
+                        disabled={branches.length === 0 && selectedCourseId !== "OTHER"}
+                        className="w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none disabled:opacity-50"
+                      >
+                        <option value="">-- Select Branch --</option>
+                        {branches.map((br) => (
+                          <option key={br.id} value={br.id}>
+                            {br.name}
+                          </option>
+                        ))}
+                        <option value="OTHER">My branch is not listed</option>
+                      </select>
+
+                      {selectedBranchId === "OTHER" && (
+                        <input
+                          type="text"
+                          value={customBranchName}
+                          onChange={(e) => setCustomBranchName(e.target.value)}
+                          placeholder="Enter branch / department name"
+                          className="w-full h-10 px-3 mt-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none animate-fadeIn"
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Academic Year & Semester (Dynamic based on selected course structure) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        Academic Year
+                      </label>
+                      {academicStructure?.year_options && academicStructure.year_options.length > 0 ? (
+                        <select
+                          value={academicYear}
+                          onChange={(e) => setAcademicYear(e.target.value)}
+                          className="w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                        >
+                          <option value="">-- Select Academic Year --</option>
+                          {academicStructure.year_options.map((yr) => (
+                            <option key={yr} value={yr}>
+                              {yr}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          value={academicYear}
+                          onChange={(e) => setAcademicYear(e.target.value)}
+                          placeholder="e.g. 2024-2025 or Final Year"
+                          className="w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                        />
+                      )}
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        Semester / Term
+                      </label>
+                      {academicStructure?.semester_options && academicStructure.semester_options.length > 0 ? (
+                        <select
+                          value={academicSemester}
+                          onChange={(e) => setAcademicSemester(e.target.value)}
+                          className="w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                        >
+                          <option value="">-- Select Semester / Term --</option>
+                          {academicStructure.semester_options.map((sem) => (
+                            <option key={sem} value={sem}>
+                              {sem}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          value={academicSemester}
+                          onChange={(e) => setAcademicSemester(e.target.value)}
+                          placeholder="e.g. Semester 6"
+                          className="w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Academic Status & Student ID */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        Academic Status
+                      </label>
+                      <select
+                        value={academicStatus}
+                        onChange={(e) => setAcademicStatus(e.target.value)}
+                        className="w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                      >
+                        <option value="Pursuing / Active Student">Pursuing / Active Student</option>
+                        <option value="Completed / Graduated">Completed / Graduated</option>
+                        <option value="Alumni">Alumni</option>
+                        <option value="Discontinued">Discontinued</option>
+                        <option value="Other">Other</option>
+                      </select>
+                      {academicStatus === "Other" && (
+                        <input
+                          type="text"
+                          value={academicStatusOther}
+                          onChange={(e) => setAcademicStatusOther(e.target.value)}
+                          placeholder="Specify status"
+                          className="w-full h-9 px-3 mt-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+                        />
+                      )}
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        Student ID Type
+                      </label>
+                      <select
+                        value={studentIdType}
+                        onChange={(e) => setStudentIdType(e.target.value)}
+                        className="w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                      >
+                        <option value="College / University ID">College / University ID</option>
+                        <option value="Enrollment / Registration Number">Enrollment / Registration Number</option>
+                        <option value="Roll Number">Roll Number</option>
+                        <option value="PRN (Permanent Registration Number)">PRN (Permanent Registration Number)</option>
+                        <option value="Other">Other</option>
+                      </select>
+                      {studentIdType === "Other" && (
+                        <input
+                          type="text"
+                          value={studentIdTypeOther}
+                          onChange={(e) => setStudentIdTypeOther(e.target.value)}
+                          placeholder="Specify ID type"
+                          className="w-full h-9 px-3 mt-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+                        />
+                      )}
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        Student ID / Roll / PRN Number
+                      </label>
+                      <input
+                        type="text"
+                        value={studentIdNumber}
+                        onChange={(e) => setStudentIdNumber(e.target.value)}
+                        placeholder="e.g. PRN-2024-0012"
+                        className="w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-mono focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Government Sensitive Identifiers (Optional with privacy note) */}
+                  <div className="pt-2 border-t border-slate-200 dark:border-slate-700/60">
+                    <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                      <span>Government Identity Numbers (Optional & Non-Custodial)</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Aadhaar Number */}
+                      <div className="space-y-1">
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          Aadhaar Number (12 Digits)
+                        </label>
+                        <input
+                          type="text"
+                          maxLength={12}
+                          value={aadhaarNumber}
+                          onChange={(e) => setAadhaarNumber(e.target.value.replace(/\D/g, ""))}
+                          placeholder="12-digit number"
+                          className="w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-mono focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                        />
+                        <p className="text-[10px] text-slate-500">
+                          Validates with Verhoeff checksum. Encrypted at rest; masked in all responses.
+                        </p>
+                      </div>
+
+                      {/* ABHA ID */}
+                      <div className="space-y-1">
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          ABHA ID (Ayushman Bharat Health Account)
+                        </label>
+                        <input
+                          type="text"
+                          maxLength={17}
+                          value={abhaId}
+                          onChange={(e) => {
+                            const d = e.target.value.replace(/\D/g, "").slice(0, 14);
+                            if (d.length <= 2) setAbhaId(d);
+                            else if (d.length <= 6) setAbhaId(`${d.slice(0, 2)}-${d.slice(2)}`);
+                            else if (d.length <= 10) setAbhaId(`${d.slice(0, 2)}-${d.slice(2, 6)}-${d.slice(6)}`);
+                            else setAbhaId(`${d.slice(0, 2)}-${d.slice(2, 6)}-${d.slice(6, 10)}-${d.slice(10)}`);
+                          }}
+                          placeholder="XX-XXXX-XXXX-XXXX"
+                          className="w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-mono focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                        />
+                        <p className="text-[10px] text-slate-500">
+                          Format: 14 digits separated into groups of 2-4-4-4.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* --------------------------------------------------------------- */}
+            {/* SECTION 4: Preferred Verification Method & Terms                */}
+            {/* --------------------------------------------------------------- */}
+            <div className="space-y-4 pt-2">
+              <label className="block font-semibold text-slate-800 dark:text-slate-200 text-xs uppercase tracking-wider">
+                Verification Channel Selection *
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div
+                  onClick={() => setVerificationMethod("EMAIL")}
+                  className={`p-3.5 rounded-xl border text-left flex items-start gap-3 transition-all cursor-pointer ${
+                    verificationMethod === "EMAIL"
+                      ? "border-[#0f2942] dark:border-blue-500 bg-blue-50/50 dark:bg-blue-950/40 shadow-sm ring-1 ring-[#0f2942] dark:ring-blue-500"
+                      : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/60 hover:border-slate-300 dark:hover:border-slate-700"
+                  }`}
+                >
+                  <div className={`p-2 rounded-lg shrink-0 ${verificationMethod === "EMAIL" ? "bg-[#0f2942] dark:bg-blue-600 text-white" : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300"}`}>
+                    <Mail className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-sm text-slate-900 dark:text-white">Email Verification</span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">
+                        Default
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      Direct 6-digit code delivered to your email inbox.
+                    </p>
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => setVerificationMethod("PHONE")}
+                  className={`p-3.5 rounded-xl border text-left flex items-start gap-3 transition-all cursor-pointer ${
+                    verificationMethod === "PHONE"
+                      ? "border-[#0f2942] dark:border-blue-500 bg-blue-50/50 dark:bg-blue-950/40 shadow-sm ring-1 ring-[#0f2942] dark:ring-blue-500"
+                      : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/60 hover:border-slate-300 dark:hover:border-slate-700"
+                  }`}
+                >
+                  <div className={`p-2 rounded-lg shrink-0 ${verificationMethod === "PHONE" ? "bg-[#0f2942] dark:bg-blue-600 text-white" : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300"}`}>
+                    <Smartphone className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-sm text-slate-900 dark:text-white">Mobile SMS</span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300">
+                        SMS
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      Instant SMS code delivered to your registered mobile phone.
+                    </p>
+                  </div>
+                </div>
               </div>
 
-              <div className="space-y-1">
-                <label className="block font-medium text-slate-700">Branch / Specialization</label>
-                <input
-                  type="text"
-                  value={branch}
-                  onChange={(e) => setBranch(e.target.value)}
-                  placeholder="e.g. Information Technology"
-                  className="w-full h-10 px-3 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="block font-medium text-slate-700">Academic Year / Year of Passing</label>
-                <input
-                  type="text"
-                  value={academicYear}
-                  onChange={(e) => setAcademicYear(e.target.value)}
-                  placeholder="e.g. 2024-2025"
-                  className="w-full h-10 px-3 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="block font-medium text-slate-700">Student Roll / Enrollment No.</label>
-                <input
-                  type="text"
-                  value={enrollmentId}
-                  onChange={(e) => setEnrollmentId(e.target.value)}
-                  placeholder="e.g. MH-2024-1982"
-                  className="w-full h-10 px-3 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none font-mono"
-                />
+              {/* Terms Checkbox */}
+              <div className="pt-2">
+                <label className="flex items-start gap-2.5 cursor-pointer text-xs text-slate-600 dark:text-slate-400">
+                  <input
+                    type="checkbox"
+                    required
+                    checked={termsAccepted}
+                    onChange={(e) => setTermsAccepted(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  />
+                  <span>
+                    I agree to the{" "}
+                    <Link href="/resources/document-guidelines" className="text-blue-600 dark:text-blue-400 hover:underline font-semibold">
+                      Terms of Service
+                    </Link>{" "}
+                    and{" "}
+                    <Link href="/about" className="text-blue-600 dark:text-blue-400 hover:underline font-semibold">
+                      Privacy Policy
+                    </Link>
+                    , and consent to non-custodial cryptographic document verification under DPDP principles.
+                  </span>
+                </label>
               </div>
             </div>
 
-            <div className="pt-4 flex justify-between border-t border-slate-100">
+            {/* Bottom Actions */}
+            <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-slate-200 dark:border-slate-800">
+              <div className="text-xs text-slate-500 dark:text-slate-400">
+                Already registered?{" "}
+                <Link href="/login" className="text-blue-600 dark:text-blue-400 font-semibold hover:underline">
+                  Sign in here
+                </Link>
+              </div>
+
               <button
-                type="button"
-                onClick={() => setStep(2)}
-                className="px-5 py-2.5 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 text-sm font-semibold flex items-center gap-1.5"
-              >
-                <ArrowLeft className="w-4 h-4" /> Back
-              </button>
-              <button
-                type="button"
+                type="submit"
                 id="btn-proceed-to-otp"
                 disabled={sendingOtp}
-                onClick={handleProceedToOtp}
-                className="px-6 py-2.5 bg-[#0f2942] hover:bg-[#163b5f] text-white text-sm font-semibold rounded-lg shadow-md flex items-center gap-2 disabled:opacity-60 cursor-pointer"
+                className="w-full sm:w-auto px-8 py-3 bg-[#0f2942] dark:bg-blue-600 hover:bg-[#163b5f] dark:hover:bg-blue-700 text-white font-semibold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
               >
                 {sendingOtp ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Dispatching OTP...</span>
+                    <span>Dispatching Verification Code...</span>
                   </>
                 ) : (
                   <>
@@ -794,285 +1497,138 @@ function RegisterWizardContent() {
                 )}
               </button>
             </div>
-          </div>
+          </form>
         )}
 
-        {/* =================================================================== */}
-        {/* STEP 4: OTP Verification Screen                                    */}
-        {/* =================================================================== */}
-        {step === 4 && (
-          <div className="space-y-6 max-w-lg mx-auto w-full bg-white p-6 sm:p-8 rounded-xl border border-slate-200 shadow-sm animate-fadeIn">
+        {/* ================================================================= */}
+        {/* STEP 2: OTP Verification Screen                                   */}
+        {/* ================================================================= */}
+        {step === 2 && (
+          <div className="space-y-6 max-w-lg mx-auto w-full bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm animate-fadeIn">
             <div className="text-center space-y-2">
-              <div className="w-12 h-12 rounded-full bg-blue-50 text-[#0f2942] flex items-center justify-center mx-auto">
+              <div className="w-12 h-12 rounded-full bg-blue-50 dark:bg-blue-950/60 text-[#0f2942] dark:text-blue-400 flex items-center justify-center mx-auto">
                 {verificationMethod === "PHONE" ? (
-                  <Smartphone className="w-6 h-6 text-blue-600" />
+                  <Smartphone className="w-6 h-6 text-blue-600 dark:text-blue-400" />
                 ) : (
-                  <Mail className="w-6 h-6 text-blue-600" />
+                  <Mail className="w-6 h-6 text-blue-600 dark:text-blue-400" />
                 )}
               </div>
-              <h2 className="text-2xl font-bold text-[#0f2942]">
-                {verificationMethod === "PHONE" ? "Verify Your Phone Number" : "Verify Your Email Address"}
+              <h2 className="text-2xl font-bold text-[#0f2942] dark:text-white">
+                {verificationMethod === "PHONE" ? "Verify Mobile Number" : "Verify Email Address"}
               </h2>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 {verificationMethod === "PHONE" ? (
                   <>
-                    A 6-digit SMS verification code has been dispatched to{" "}
-                    <span className="font-semibold text-slate-700">{mobile || "your phone"}</span>.
+                    A 6-digit SMS code has been sent to{" "}
+                    <span className="font-semibold text-slate-700 dark:text-slate-200">{mobile}</span>.
                   </>
                 ) : (
                   <>
-                    A 6-digit cryptographic verification code has been dispatched to{" "}
-                    <span className="font-semibold text-slate-700">{email}</span>.
+                    A 6-digit verification code has been sent to{" "}
+                    <span className="font-semibold text-slate-700 dark:text-slate-200">{email}</span>.
                   </>
                 )}
               </p>
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] bg-slate-100 text-slate-700">
-                <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-                <span>
-                  {verificationMethod === "PHONE"
-                    ? "Cryptographic Mobile OTP Verification"
-                    : "Cryptographic Email Verification (Resend)"}
-                </span>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                <ShieldCheck className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                <span>HMAC-SHA256 Cryptographic Verification</span>
               </div>
             </div>
 
-            {/* Success Notification */}
+            {/* Success notification */}
             {otpSuccessMsg && (
-              <div className="p-3 bg-emerald-50 text-emerald-800 text-xs rounded-lg border border-emerald-200 flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 text-xs rounded-xl border border-emerald-200 dark:border-emerald-800 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
                 <span>{otpSuccessMsg}</span>
               </div>
             )}
 
-            {/* Error Notification */}
+            {/* Error notification */}
             {otpError && (
-              <div className="p-3 bg-red-50 text-red-800 text-xs rounded-lg border border-red-200 flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+              <div className="p-3 bg-red-50 dark:bg-rose-950/40 text-red-800 dark:text-rose-300 text-xs rounded-xl border border-red-200 dark:border-rose-900/60 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-red-600 dark:text-rose-400" />
                 <span>{otpError}</span>
               </div>
             )}
 
-            {/* 6 Digit Input Cells */}
-            <div
-              className="flex justify-center gap-2 sm:gap-3 py-3"
-              onPaste={handleOtpPaste}
-            >
+            {/* 6-Digit Code Inputs */}
+            <div className="flex justify-center gap-2 sm:gap-3 py-2" onPaste={handleOtpPaste}>
               {otp.map((digit, idx) => (
                 <input
                   key={idx}
                   id={`otp-input-${idx}`}
                   type="text"
                   inputMode="numeric"
-                  pattern="[0-9]*"
                   maxLength={1}
                   value={digit}
-                  disabled={otpLoading || otpVerified}
                   onChange={(e) => handleOtpChange(idx, e.target.value)}
                   onKeyDown={(e) => handleOtpKeyDown(idx, e)}
-                  className={`w-11 h-12 text-center text-lg font-bold font-mono border-2 rounded-lg transition-all focus:outline-none focus:ring-2 ${
-                    otpError
-                      ? "border-red-400 bg-red-50/30 text-red-900 focus:border-red-600 focus:ring-red-500/20"
-                      : otpVerified
-                      ? "border-emerald-500 bg-emerald-50/40 text-emerald-800"
-                      : "border-slate-300 focus:border-[#0f2942] focus:ring-blue-600/20"
-                  }`}
+                  className="w-11 h-12 sm:w-12 sm:h-14 text-center font-mono font-bold text-lg sm:text-xl rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-600 focus:border-transparent focus:outline-none transition-all"
                 />
               ))}
             </div>
 
-            {/* Resend OTP Row with Cooldown */}
-            <div className="text-center text-xs text-slate-500 flex items-center justify-center gap-1.5">
-              <span>Did not receive code?</span>
-              {resendTimer > 0 ? (
-                <span className="text-slate-400 font-medium flex items-center gap-1">
-                  <RefreshCw className="w-3 h-3 animate-spin" />
-                  Resend in <strong className="text-slate-600">{resendTimer}s</strong>
-                </span>
+            {/* Submit Verification Button */}
+            <button
+              type="button"
+              onClick={() => finalizeRegistration(otp.join(""))}
+              disabled={otp.join("").length !== 6 || otpLoading}
+              className="w-full h-11 bg-[#0f2942] dark:bg-blue-600 hover:bg-[#163b5f] dark:hover:bg-blue-700 text-white font-semibold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+            >
+              {otpLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Finalizing Security Profile...</span>
+                </>
               ) : (
-                <button
-                  type="button"
-                  id="btn-resend-otp"
-                  disabled={otpLoading}
-                  onClick={handleResendOtp}
-                  className="text-[#0f2942] font-semibold hover:underline flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                  <span>Resend OTP</span>
-                </button>
+                <>
+                  <span>Verify & Create Account</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
               )}
-            </div>
+            </button>
 
-            {/* Switch Channel Quick Link */}
-            <div className="pt-2 text-center">
-              {verificationMethod === "PHONE" ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setVerificationMethod("EMAIL");
-                    setStep(3);
-                  }}
-                  className="text-xs text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-1 font-medium cursor-pointer"
-                >
-                  <Mail className="w-3.5 h-3.5" />
-                  <span>Prefer Email verification? Switch to Email OTP</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setVerificationMethod("PHONE");
-                    setStep(3);
-                  }}
-                  className="text-xs text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-1 font-medium cursor-pointer"
-                >
-                  <Smartphone className="w-3.5 h-3.5" />
-                  <span>Prefer SMS verification? Switch to Phone OTP</span>
-                </button>
-              )}
-            </div>
-
-            {/* Bottom Actions */}
-            <div className="pt-4 flex justify-between border-t border-slate-100">
+            {/* Resend and Back Buttons */}
+            <div className="flex items-center justify-between text-xs pt-2">
               <button
                 type="button"
-                onClick={() => setStep(3)}
-                className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 text-xs font-semibold flex items-center gap-1"
+                onClick={() => setStep(1)}
+                className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 cursor-pointer"
               >
-                <ArrowLeft className="w-3.5 h-3.5" /> Back
+                ← Back to edit details
               </button>
+
               <button
                 type="button"
-                id="btn-verify-otp"
-                disabled={otpLoading || otpVerified || otp.join("").length !== 6}
-                onClick={handleVerifyOtp}
-                className="px-6 py-2.5 bg-[#0f2942] hover:bg-[#163b5f] text-white text-xs font-semibold rounded-lg shadow-md flex items-center gap-2 disabled:opacity-50 cursor-pointer transition-all"
+                onClick={handleResendOtp}
+                disabled={resendTimer > 0 || otpLoading}
+                className="font-semibold text-blue-600 dark:text-blue-400 hover:underline disabled:text-slate-400 disabled:no-underline cursor-pointer"
               >
-                {otpLoading ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Verifyingâ€¦</span>
-                  </>
-                ) : otpVerified ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Verified!</span>
-                  </>
-                ) : (
-                  <>
-                    <span>Confirm & Continue</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* =================================================================== */}
-        {/* STEP 5: Review & Consent                                           */}
-        {/* =================================================================== */}
-        {step === 5 && (
-          <div className="space-y-6 max-w-2xl mx-auto w-full bg-white p-6 sm:p-8 rounded-xl border border-slate-200 shadow-sm animate-fadeIn">
-            <div>
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-800 text-xs font-semibold rounded-full border border-emerald-200 mb-2">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                Contact Authenticated
-              </div>
-              <h2 className="text-2xl font-bold text-[#0f2942]">Review & Consent</h2>
-              <p className="text-xs text-slate-500 mt-1">
-                Please review your profile details before finalizing your cryptographic account creation.
-              </p>
-            </div>
-
-            {/* Summary Card */}
-            <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <span className="text-slate-400 font-mono uppercase text-[10px]">Full Name</span>
-                  <div className="font-semibold text-slate-800">{fullName}</div>
-                </div>
-                <div>
-                  <span className="text-slate-400 font-mono uppercase text-[10px]">Email Address</span>
-                  <div className="font-semibold text-slate-800">{email}</div>
-                </div>
-                <div>
-                  <span className="text-slate-400 font-mono uppercase text-[10px]">Institution</span>
-                  <div className="font-semibold text-slate-800">{institution}</div>
-                </div>
-                <div>
-                  <span className="text-slate-400 font-mono uppercase text-[10px]">Course & Branch</span>
-                  <div className="font-semibold text-slate-800">{course} ({branch})</div>
-                </div>
-                <div>
-                  <span className="text-slate-400 font-mono uppercase text-[10px]">Academic Year</span>
-                  <div className="font-semibold text-slate-800">{academicYear}</div>
-                </div>
-                <div>
-                  <span className="text-slate-400 font-mono uppercase text-[10px]">Account Role</span>
-                  <div className="font-semibold text-slate-800">{role} â€¢ {userType}</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Legal consent check */}
-            <div className="p-3 bg-blue-50/60 rounded-lg border border-blue-100 flex items-start gap-2.5 text-xs text-slate-600">
-              <Shield className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-              <div className="leading-snug">
-                I hereby consent to non-custodial document verification against authorized educational registers in accordance with the Digital Personal Data Protection (DPDP) principles.
-              </div>
-            </div>
-
-            <div className="pt-4 flex justify-between border-t border-slate-100 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={() => setStep(4)}
-                className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-semibold flex items-center gap-1"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" /> {t.common?.back || "Back"}
-              </button>
-              <button
-                type="button"
-                disabled={submitting}
-                onClick={handleFinalSubmit}
-                className="px-6 py-2.5 bg-[#0f2942] dark:bg-blue-600 hover:bg-[#163b5f] dark:hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-md flex items-center gap-2 disabled:opacity-60 cursor-pointer"
-              >
-                {submitting ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>{t.registerPage?.submitting || "Creating account..."}</span>
-                  </>
-                ) : (
-                  <>
-                    <span>{t.registerPage?.submitBtn || "Complete Registration"}</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </>
-                )}
+                {resendTimer > 0 ? `Resend code in ${resendTimer}s` : "Resend code"}
               </button>
             </div>
           </div>
         )}
       </main>
 
-      {/* Global Footer */}
       <Footer />
     </div>
   );
 }
 
-export default function RegisterWizardPage() {
+export default function RegisterPage() {
   return (
     <Suspense
       fallback={
         <div className="min-h-screen flex items-center justify-center bg-[#faf8ff] dark:bg-[#090d16]">
           <div className="flex flex-col items-center gap-2">
             <Loader2 className="w-8 h-8 animate-spin text-[#0f2942] dark:text-blue-400" />
-            <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">Loading registration wizard…</span>
+            <span className="text-xs text-slate-500 font-mono">Loading registration portal…</span>
           </div>
         </div>
       }
     >
-      <RegisterWizardContent />
+      <RegisterFormContent />
     </Suspense>
   );
 }
-

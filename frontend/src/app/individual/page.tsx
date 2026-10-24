@@ -43,6 +43,14 @@ export default function IndividualOverviewPage() {
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
 
+  // Background Forensics Tracking & Batch Upload state
+  const [processingDocIds, setProcessingDocIds] = useState<string[]>([]);
+  const [batchUploadState, setBatchUploadState] = useState<{
+    current: number;
+    total: number;
+    filename: string;
+  } | null>(null);
+
   // New Case Modal state
   const [showNewCaseModal, setShowNewCaseModal] = useState(false);
   const [newCaseTitle, setNewCaseTitle] = useState("");
@@ -56,6 +64,31 @@ export default function IndividualOverviewPage() {
   useEffect(() => {
     loadIndividualData();
   }, []);
+
+  // Live auto-polling for documents undergoing background AI forensics & extraction
+  useEffect(() => {
+    const hasProcessing =
+      documents.some((d) => d.status === "PROCESSING") || processingDocIds.length > 0;
+    if (!hasProcessing || !selectedCase) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const detail = await api.getCase(selectedCase.id);
+        if (detail && detail.documents) {
+          setDocuments(detail.documents);
+          setSelectedCase(detail.case);
+          const stillProcessing = detail.documents
+            .filter((d) => d.status === "PROCESSING")
+            .map((d) => d.id);
+          setProcessingDocIds(stillProcessing);
+        }
+      } catch (e) {
+        console.error("Dossier forensics polling error:", e);
+      }
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [documents, processingDocIds, selectedCase]);
 
   const loadIndividualData = async () => {
     setIsLoading(true);
@@ -120,31 +153,52 @@ export default function IndividualOverviewPage() {
     }
   };
 
-  const handleFileUpload = async (files: FileList | null) => {
+  const handleFileUpload = async (files: FileList | File[] | null) => {
     if (!files || files.length === 0) return;
-    const file = files[0];
+    const fileArray = Array.from(files);
 
-    if (file.size > 25 * 1024 * 1024) {
-      setUploadError("File exceeds 25MB limit. Please upload a smaller document.");
-      return;
+    const validFiles: File[] = [];
+    for (const f of fileArray) {
+      if (f.size > 25 * 1024 * 1024) {
+        setUploadError(`File "${f.name}" exceeds 25MB limit. Please upload a smaller document.`);
+        return;
+      }
+      validFiles.push(f);
     }
+
+    if (validFiles.length === 0) return;
 
     setUploadError(null);
     setUploadSuccess(null);
     setIsUploading(true);
-    setUploadProgress(20);
+    setUploadProgress(10);
 
     try {
-      const interval = setInterval(() => {
-        setUploadProgress((p) => (p < 80 ? p + 20 : p));
-      }, 200);
-
       const targetCaseId = selectedCase ? selectedCase.id : undefined;
-      await api.uploadDocument(file, targetCaseId);
+      const uploadedDocIds: string[] = [];
 
-      clearInterval(interval);
+      for (let i = 0; i < validFiles.length; i++) {
+        const curFile = validFiles[i];
+        setBatchUploadState({
+          current: i + 1,
+          total: validFiles.length,
+          filename: curFile.name,
+        });
+        setUploadProgress(Math.round(((i + 1) / validFiles.length) * 85));
+
+        // Upload in asynchronous mode so server forensics runs in background
+        const doc = await api.uploadDocument(curFile, targetCaseId, true);
+        uploadedDocIds.push(doc.id);
+      }
+
       setUploadProgress(100);
-      setUploadSuccess(`"${file.name}" uploaded and extracted successfully!`);
+      setProcessingDocIds((prev) => Array.from(new Set([...prev, ...uploadedDocIds])));
+
+      setUploadSuccess(
+        validFiles.length === 1
+          ? `"${validFiles[0].name}" uploaded! Forensics & OCR running in background.`
+          : `Batch upload complete! ${validFiles.length} credentials added to dossier and queued for AI analysis.`
+      );
 
       if (selectedCase) {
         const detail = await api.getCase(selectedCase.id);
@@ -157,11 +211,40 @@ export default function IndividualOverviewPage() {
       setUploadError(err.message || "Failed to process document upload.");
     } finally {
       setIsUploading(false);
+      setBatchUploadState(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
       setTimeout(() => {
         setUploadSuccess(null);
         setUploadProgress(0);
-      }, 4000);
+      }, 5000);
+    }
+  };
+
+  const handleReprocessDocument = async (docId: string, docName: string) => {
+    try {
+      setProcessingDocIds((prev) => [...prev, docId]);
+      // Instant local UI state update
+      setDocuments((prev) =>
+        prev.map((d) =>
+          d.id === docId
+            ? {
+                ...d,
+                status: "PROCESSING",
+                processing_stage: "Re-evaluating document forensics & credential extraction...",
+              }
+            : d
+        )
+      );
+
+      await api.reprocessDocument(docId, true);
+      setUploadSuccess(`AI re-analysis scheduled for "${docName}". Background forensics running...`);
+      setTimeout(() => setUploadSuccess(null), 4000);
+    } catch (err: any) {
+      alert("Failed to re-run AI analysis: " + err.message);
+      if (selectedCase) {
+        const detail = await api.getCase(selectedCase.id);
+        setDocuments(detail.documents || []);
+      }
     }
   };
 
@@ -255,7 +338,7 @@ export default function IndividualOverviewPage() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="text-xs uppercase tracking-wider text-blue-700 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded border border-blue-200/60 dark:border-blue-800/60">
-              Individual Workspace
+              Student & Peoples Workspace
             </span>
             <span className="text-xs text-slate-400 dark:text-slate-500">•</span>
             <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
@@ -263,10 +346,10 @@ export default function IndividualOverviewPage() {
             </span>
           </div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
-            Document Analysis & Verification
+            Academic Credential Portfolio & Forensics
           </h1>
           <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-            Manage your personal credentials, extract verifiable fields, and run authoritative institutional queries.
+            Manage your personal credential dossier, batch upload marksheets and degree certificates, and run authoritative institutional queries.
           </p>
         </div>
 
@@ -513,6 +596,7 @@ export default function IndividualOverviewPage() {
         >
           <input
             type="file"
+            multiple
             ref={fileInputRef}
             onChange={(e) => handleFileUpload(e.target.files)}
             accept=".pdf,.png,.jpg,.jpeg,.docx"
@@ -523,10 +607,10 @@ export default function IndividualOverviewPage() {
           </div>
           <div>
             <p className="text-xs font-semibold text-slate-800 dark:text-white">
-              Click to select or drag and drop your document here
+              Click to select or drag and drop your credentials here
             </p>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-              DPDP compliant non-custodial extraction
+              Supports multi-file batch upload (degrees, transcripts, marksheets) • DPDP non-custodial extraction
             </p>
           </div>
         </div>
@@ -537,7 +621,9 @@ export default function IndividualOverviewPage() {
             <div className="flex items-center justify-between text-xs text-slate-800 dark:text-white font-medium">
               <span className="flex items-center gap-1.5">
                 <RefreshCw className="w-3 h-3 animate-spin text-blue-600 dark:text-blue-400" />
-                Validating Magic Bytes & Parsing Text...
+                {batchUploadState
+                  ? `Uploading file ${batchUploadState.current} of ${batchUploadState.total}: "${batchUploadState.filename}"...`
+                  : "Validating Magic Bytes & Ingesting Credential..."}
               </span>
               <span>{uploadProgress}%</span>
             </div>
@@ -684,7 +770,17 @@ export default function IndividualOverviewPage() {
                       </td>
 
                       <td className="py-2.5 px-4">
-                        {isVerified ? (
+                        {doc.status === "PROCESSING" ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-950/80 dark:text-blue-300 animate-pulse">
+                            <RefreshCw className="w-3 h-3 animate-spin" />
+                            Forensics Active...
+                          </span>
+                        ) : doc.tamper_detected ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-800 dark:bg-red-950/80 dark:text-red-300">
+                            <AlertTriangle className="w-3 h-3 text-red-600" />
+                            Tamper Alert ({doc.tamper_regions?.length || 0})
+                          </span>
+                        ) : isVerified ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300">
                             <CheckCircle2 className="w-3 h-3" />
                             Verified
@@ -721,6 +817,17 @@ export default function IndividualOverviewPage() {
                             <Eye className="w-3 h-3 text-blue-600 dark:text-blue-400" />
                             Inspect
                           </Link>
+
+                          {/* Quick AI Re-Analysis Button */}
+                          <button
+                            onClick={() => handleReprocessDocument(doc.id, doc.original_filename)}
+                            disabled={doc.status === "PROCESSING" || processingDocIds.includes(doc.id)}
+                            className="px-2 py-0.5 bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/60 border border-amber-200/60 dark:border-amber-800/60 rounded font-semibold text-[10px] inline-flex items-center gap-1 transition-colors disabled:opacity-50"
+                            title="Re-run AI extraction and forensic tamper analysis on this document"
+                          >
+                            <Sparkles className={`w-3 h-3 ${doc.status === "PROCESSING" || processingDocIds.includes(doc.id) ? "animate-spin text-amber-600" : "text-amber-600 dark:text-amber-400"}`} />
+                            Re-analyze
+                          </button>
 
                           {!isVerified && (
                             <button

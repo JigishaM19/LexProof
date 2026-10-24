@@ -14,21 +14,58 @@ logger = logging.getLogger("LexProof.AuthService")
 class AuthService:
     @staticmethod
     def _doc_to_user_response(doc: dict) -> UserResponse:
+        from app.models.user import mask_aadhaar, mask_abha
         return UserResponse(
             id=doc["id"],
             email=doc["email"],
-            full_name=doc["full_name"],
+            first_name=doc.get("first_name"),
+            middle_name=doc.get("middle_name"),
+            last_name=doc.get("last_name"),
+            full_name=doc.get("full_name", ""),
+            country_code=doc.get("country_code", "+91"),
             mobile=doc.get("mobile"),
-            role=doc.get("role", "INDIVIDUAL"),
-            user_type=doc.get("user_type", "STUDENT"),
-            institution=doc.get("institution"),
-            course=doc.get("course"),
-            branch=doc.get("branch"),
+            role="ADMIN" if (doc.get("role") or "").strip().upper() == "ADMIN" else "USER",
+            user_type="ADMIN" if (doc.get("role") or "").strip().upper() == "ADMIN" else "PEOPLE",
+            # Address
+            country_id=doc.get("country_id"),
+            country_name=doc.get("country_name"),
+            state_id=doc.get("state_id"),
+            state_name=doc.get("state_name"),
+            district_id=doc.get("district_id"),
+            district_name=doc.get("district_name"),
+            subdistrict_id=doc.get("subdistrict_id"),
+            subdistrict_name=doc.get("subdistrict_name"),
+            city_id=doc.get("city_id"),
+            city_name=doc.get("city_name"),
+            pincode=doc.get("pincode"),
+            # Student info – return masked sensitive identifiers
+            masked_aadhaar=mask_aadhaar(doc.get("aadhaar_number")),
+            masked_abha=mask_abha(doc.get("abha_id")),
+            student_id_type=doc.get("student_id_type"),
+            student_id_type_other=doc.get("student_id_type_other"),
+            student_id_number=doc.get("student_id_number"),
+            institution_id=doc.get("institution_id"),
+            institution_name=doc.get("institution_name"),
+            institution=doc.get("institution") or doc.get("institution_name"),
+            course_id=doc.get("course_id"),
+            course_name=doc.get("course_name"),
+            course=doc.get("course") or doc.get("course_name"),
+            branch_id=doc.get("branch_id"),
+            branch_name=doc.get("branch_name"),
+            branch=doc.get("branch") or doc.get("branch_name"),
             academic_year=doc.get("academic_year"),
-            enrollment_id=doc.get("enrollment_id"),
+            academic_semester=doc.get("academic_semester"),
+            academic_status=doc.get("academic_status"),
+            academic_status_other=doc.get("academic_status_other"),
+            enrollment_id=doc.get("enrollment_id") or doc.get("student_id_number"),
+            custom_institution_name=doc.get("custom_institution_name"),
+            custom_course_name=doc.get("custom_course_name"),
+            custom_branch_name=doc.get("custom_branch_name"),
+            # Flags
             is_email_verified=doc.get("is_email_verified", False),
             is_mobile_verified=doc.get("is_mobile_verified", False),
             is_verified=doc.get("is_email_verified", False) or doc.get("is_mobile_verified", False),
+            is_demo_account=doc.get("is_demo_account", False),
             auth_provider=doc.get("auth_provider", "local"),
             account_status=doc.get("account_status", "ACTIVE"),
             created_at=doc.get("created_at") or datetime.now(timezone.utc),
@@ -65,24 +102,108 @@ class AuthService:
         if clean_mobile:
             mobile_verified = await OTPService.is_identifier_verified(clean_mobile, purpose="REGISTRATION")
 
-        # Assign default role, prevent self-assigning privileged roles
-        role = "ORGANIZATION" if user_in.role == "ORGANIZATION" else "INDIVIDUAL"
+        # Assign default role, allow ADMIN or default to USER
+        role = "ADMIN" if (user_in.role or "").strip().upper() == "ADMIN" else "USER"
+
+        # Validate geographic hierarchy (State -> District -> Subdistrict)
+        state_id = user_in.state_id
+        district_id = user_in.district_id
+        subdistrict_id = user_in.subdistrict_id
+        resolved_state_name = user_in.state_name
+        resolved_district_name = user_in.district_name
+        resolved_subdistrict_name = user_in.subdistrict_name
+        district_doc = None
+
+        if state_id:
+            state_doc = await db["states"].find_one({"id": state_id})
+            if state_doc:
+                resolved_state_name = state_doc.get("name")
+            elif user_in.country_id == "IN":
+                raise ValueError(f"State '{state_id}' is not recognized.")
+
+        if district_id:
+            dist_query = {"$or": [{"id": district_id}, {"code": district_id}]}
+            if state_id:
+                dist_query["state_id"] = state_id
+            district_doc = await db["districts"].find_one(dist_query)
+            if not district_doc and state_id:
+                district_doc = await db["districts"].find_one({"state_id": state_id, "id": {"$regex": re.escape(district_id), "$options": "i"}})
+            if not district_doc:
+                if user_in.country_id == "IN":
+                    raise ValueError(f"District '{district_id}' is invalid or does not belong to the selected state.")
+            else:
+                resolved_district_name = district_doc.get("name")
+
+        if subdistrict_id:
+            sub_doc = await db["subdistricts"].find_one({"id": subdistrict_id})
+            if not sub_doc and subdistrict_id.isdigit():
+                sub_doc = await db["subdistricts"].find_one({"code": int(subdistrict_id)})
+            if not sub_doc:
+                if user_in.country_id == "IN":
+                    raise ValueError(f"Subdistrict '{subdistrict_id}' is not recognized.")
+            elif district_id:
+                is_match = (
+                    sub_doc.get("district_id") == district_id or
+                    str(sub_doc.get("district_code")) == district_id or
+                    (district_doc and sub_doc.get("district_code") == district_doc.get("lgd_code")) or
+                    (district_doc and sub_doc.get("district_name", "").lower() == district_doc.get("name", "").lower())
+                )
+                if not is_match:
+                    raise ValueError(f"Subdistrict '{sub_doc.get('name')}' does not belong to district '{resolved_district_name or district_id}'.")
+            resolved_subdistrict_name = sub_doc.get("name")
 
         user_record = {
             "id": user_id,
             "email": clean_email,
-            "full_name": user_in.full_name.strip(),
+            # Name fields
+            "first_name": user_in.first_name,
+            "middle_name": user_in.middle_name,
+            "last_name": user_in.last_name,
+            "full_name": (user_in.full_name or "").strip(),
+            "country_code": user_in.country_code or "+91",
             "mobile": clean_mobile,
             "password_hash": hashed_pwd,
             "role": role,
-            "user_type": user_in.user_type,
-            "institution": user_in.institution,
-            "course": user_in.course,
-            "branch": user_in.branch,
+            "user_type": user_in.user_type or "USER",
+            # Address
+            "country_id": user_in.country_id,
+            "country_name": user_in.country_name,
+            "state_id": user_in.state_id,
+            "state_name": resolved_state_name or user_in.state_name,
+            "district_id": user_in.district_id,
+            "district_name": resolved_district_name or user_in.district_name,
+            "subdistrict_id": user_in.subdistrict_id,
+            "subdistrict_name": resolved_subdistrict_name or user_in.subdistrict_name,
+            "city_id": user_in.city_id,
+            "city_name": user_in.city_name,
+            "pincode": user_in.pincode,
+            # Student information – store securely, never log
+            "aadhaar_number": user_in.aadhaar_number,  # stored only when provided; encrypted at rest by Atlas
+            "abha_id": user_in.abha_id,
+            "student_id_type": user_in.student_id_type,
+            "student_id_type_other": user_in.student_id_type_other,
+            "student_id_number": user_in.student_id_number,
+            "institution_id": user_in.institution_id,
+            "institution_name": user_in.institution_name or user_in.institution,
+            "institution": user_in.institution or user_in.institution_name,
+            "custom_institution_name": user_in.custom_institution_name,
+            "course_id": user_in.course_id,
+            "course_name": user_in.course_name or user_in.course,
+            "course": user_in.course or user_in.course_name,
+            "custom_course_name": user_in.custom_course_name,
+            "branch_id": user_in.branch_id,
+            "branch_name": user_in.branch_name or user_in.branch,
+            "branch": user_in.branch or user_in.branch_name,
+            "custom_branch_name": user_in.custom_branch_name,
             "academic_year": user_in.academic_year,
-            "enrollment_id": user_in.enrollment_id,
+            "academic_semester": user_in.academic_semester,
+            "academic_status": user_in.academic_status,
+            "academic_status_other": user_in.academic_status_other,
+            "enrollment_id": user_in.enrollment_id or user_in.student_id_number,
+            # Flags
             "is_email_verified": email_verified,
             "is_mobile_verified": mobile_verified,
+            "is_demo_account": False,
             "auth_provider": "local",
             "account_status": "ACTIVE",
             "created_at": now,
@@ -147,11 +268,12 @@ class AuthService:
             "is_revoked": False
         })
 
-        # Generate JWT access token
+        # Generate JWT access token with normalized role: ADMIN or USER
+        user_role = "ADMIN" if (user.get("role") or "").strip().upper() == "ADMIN" else "USER"
         token_data = {
             "sub": user["id"],
             "email": user["email"],
-            "role": user.get("role", "INDIVIDUAL"),
+            "role": user_role,
             "full_name": user["full_name"],
             "session_id": session_id
         }
@@ -217,8 +339,8 @@ class AuthService:
                 "full_name": full_name,
                 "mobile": None,
                 "password_hash": None,
-                "role": "INDIVIDUAL",
-                "user_type": "STUDENT",
+                "role": "USER",
+                "user_type": "USER",
                 "institution": None,
                 "course": None,
                 "branch": None,
@@ -251,7 +373,7 @@ class AuthService:
         token_data = {
             "sub": user["id"],
             "email": user["email"],
-            "role": user.get("role", "INDIVIDUAL"),
+            "role": user.get("role", "USER"),
             "full_name": user["full_name"],
             "session_id": session_id
         }
@@ -327,3 +449,91 @@ class AuthService:
         else:
             await sessions_col.update_many({"user_id": user_id}, {"$set": {"is_revoked": True}})
         return True
+
+    @classmethod
+    async def get_or_create_demo_user(cls, role: str = "USER") -> TokenResponse:
+        """
+        Upsert a clearly-labelled non-privileged demo account for testing.
+        Uses synthetic, non-sensitive data. Supports USER and ORGANIZATION roles.
+        """
+        from app.core.security import get_password_hash, create_access_token
+
+        target_role = "ADMIN" if (role or "").strip().upper() == "ADMIN" else "USER"
+        demo_email = "demo.admin@lexproof.dev" if target_role == "ADMIN" else "demo.user@lexproof.dev"
+        demo_full_name = "Demo Administrator" if target_role == "ADMIN" else "Demo Student User"
+        demo_inst = "LexProof Administration" if target_role == "ADMIN" else "Savitribai Phule Pune University"
+
+        db = await get_database()
+        users_col = db["users"]
+        sessions_col = db["sessions"]
+        now = datetime.now(timezone.utc)
+
+        existing = await users_col.find_one({"email": demo_email})
+        if existing:
+            user_doc = existing
+            await users_col.update_one({"email": demo_email}, {"$set": {"last_login": now}})
+        else:
+            demo_id = str(uuid.uuid4())
+            user_doc = {
+                "id": demo_id,
+                "email": demo_email,
+                "first_name": "Demo",
+                "middle_name": None,
+                "last_name": "Admin" if target_role == "ADMIN" else "User",
+                "full_name": demo_full_name,
+                "country_code": "+91",
+                "mobile": None,
+                "password_hash": get_password_hash("demo-session-only-not-a-real-password"),
+                "role": target_role,
+                "user_type": "ADMIN" if target_role == "ADMIN" else "PEOPLE",
+                "institution_name": demo_inst,
+                "institution": demo_inst,
+                "country_id": "IN",
+                "country_name": "India",
+                "state_id": "IN-MH",
+                "state_name": "Maharashtra",
+                "district_id": "IN-MH-PUN",
+                "district_name": "Pune",
+                "city_id": "IN-MH-PUN-01",
+                "city_name": "Pune City",
+                "pincode": "411001",
+                "is_email_verified": True,
+                "is_mobile_verified": False,
+                "is_demo_account": True,
+                "auth_provider": "demo",
+                "account_status": "ACTIVE",
+                "created_at": now,
+                "updated_at": now,
+                "last_login": now
+            }
+            await users_col.insert_one(user_doc)
+            logger.info(f"Demo account initialized: {demo_email} (Role: {target_role})")
+
+        # Create short-lived demo session
+        session_id = str(uuid.uuid4())
+        session_expires = now + timedelta(hours=1)
+        await sessions_col.insert_one({
+            "token_id": session_id,
+            "user_id": user_doc["id"],
+            "created_at": now,
+            "expires_at": session_expires,
+            "is_revoked": False,
+            "is_demo_session": True
+        })
+
+        token_data = {
+            "sub": user_doc["id"],
+            "email": user_doc["email"],
+            "role": user_doc.get("role", target_role),
+            "full_name": user_doc.get("full_name", demo_full_name),
+            "session_id": session_id,
+            "is_demo": True
+        }
+        access_token = create_access_token(token_data, expires_delta=timedelta(hours=1))
+        user_resp = cls._doc_to_user_response(user_doc)
+        return TokenResponse(
+            access_token=access_token,
+            token_type="bearer",
+            expires_in=3600,
+            user=user_resp
+        )

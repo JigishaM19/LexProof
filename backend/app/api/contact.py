@@ -20,7 +20,7 @@ async def submit_contact_inquiry(
 ):
     try:
         user_id = current_user.id if current_user else None
-        created = ContactService.create_inquiry(inquiry_in, user_id=user_id)
+        created = await ContactService.create_inquiry(inquiry_in, user_id=user_id)
         return created
     except Exception as e:
         raise HTTPException(
@@ -38,7 +38,7 @@ async def list_contact_inquiries(
     limit: int = 50,
     current_user: Optional[UserResponse] = Depends(get_optional_user)
 ):
-    return ContactService.list_inquiries(limit=limit)
+    return await ContactService.list_inquiries(limit=limit)
 
 @router.get(
     "/inquiries/{inquiry_id}",
@@ -50,7 +50,7 @@ async def get_contact_inquiry(
     inquiry_id: str,
     current_user: Optional[UserResponse] = Depends(get_optional_user)
 ):
-    inquiry = ContactService.get_inquiry(inquiry_id)
+    inquiry = await ContactService.get_inquiry(inquiry_id)
     if not inquiry:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

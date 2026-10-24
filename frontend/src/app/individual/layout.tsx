@@ -21,13 +21,7 @@ export default function IndividualLayout({
       return;
     }
     const user = api.getCurrentUser();
-
-    if (user && user.role !== "INDIVIDUAL") {
-      // Is an organization account trying to access individual workspace
-      router.replace("/organization");
-      return;
-    }
-
+    // Allow authenticated users (both USER/Peoples and ADMIN)
     setIsAuthorized(true);
     setLoading(false);
   }, [router]);

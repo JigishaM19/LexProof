@@ -70,9 +70,12 @@ export function OrganizationNavbar() {
     router.push("/");
   };
 
+  const isAdminPath = pathname.startsWith("/admin");
+  const basePath = isAdminPath ? "/admin" : "/organization";
+
   const navLinks = [
-    { label: "Overview", href: "/organization" },
-    { label: "Verifications", href: "/organization/verifications" },
+    { label: "Overview", href: basePath },
+    { label: "Verifications", href: `${basePath}/verifications` },
     { label: "Coverage Directory", href: "/verification/coverage" },
   ];
 
@@ -83,15 +86,15 @@ export function OrganizationNavbar() {
           
           {/* Brand & Workspace Identity */}
           <div className="flex items-center gap-4">
-            <Link href="/organization" className="flex items-center gap-2.5 focus:outline-none">
+            <Link href={basePath} className="flex items-center gap-2.5 focus:outline-none">
               <LexProofLogo className="w-8 h-8" />
               <div className="flex items-baseline gap-2">
                 <span className="text-lg font-bold text-[#0f2942] dark:text-white tracking-tight">
                   LexProof
                 </span>
                 <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-200/60 dark:border-purple-800/60 flex items-center gap-1">
-                  <Building2 className="w-2.5 h-2.5" />
-                  Organization
+                  <ShieldCheck className="w-2.5 h-2.5" />
+                  Admin Console
                 </span>
               </div>
             </Link>
@@ -225,7 +228,7 @@ export function OrganizationNavbar() {
                   {currentUser?.institution?.charAt(0).toUpperCase() || currentUser?.full_name?.charAt(0).toUpperCase() || "O"}
                 </div>
                 <span className="hidden sm:inline-block text-xs font-semibold text-slate-800 dark:text-slate-200 max-w-[120px] truncate">
-                  {currentUser?.institution || currentUser?.full_name || "Organization"}
+                  {currentUser?.full_name || "Administrator"}
                 </span>
                 <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${activeDropdown === "profile" ? "rotate-180" : ""}`} />
               </button>
@@ -238,7 +241,7 @@ export function OrganizationNavbar() {
                         {currentUser?.institution || currentUser?.full_name || "Organization"}
                       </span>
                       <span className="px-1.5 py-0.2 text-[9px] font-bold uppercase rounded bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300">
-                        Organization
+                        {currentUser?.role || "ADMIN"}
                       </span>
                     </div>
                     <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5 font-mono">
@@ -253,7 +256,7 @@ export function OrganizationNavbar() {
                       className="flex items-center gap-2 w-full px-2.5 py-1.5 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                     >
                       <Layers className="w-3.5 h-3.5 text-slate-400" />
-                      <span>Organization Workspace</span>
+                      <span>Admin Console</span>
                     </Link>
 
                     <Link

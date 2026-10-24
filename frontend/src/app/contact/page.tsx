@@ -11,8 +11,11 @@ import {
   CheckCircle2,
   HelpCircle,
   ArrowRight,
-  Info
+  Info,
+  AlertCircle,
+  Loader2,
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 export default function ContactPage() {
   const [submitted, setSubmitted] = useState(false);
@@ -20,11 +23,28 @@ export default function ContactPage() {
   const [email, setEmail] = useState("");
   const [inquiryType, setInquiryType] = useState("Individual Inquiry");
   const [message, setMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !email || !message) return;
-    setSubmitted(true);
+    if (!name.trim() || !email.trim() || !message.trim()) return;
+
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    try {
+      await api.submitContactInquiry({
+        name: name.trim(),
+        email: email.trim(),
+        inquiry_type: inquiryType,
+        message: message.trim(),
+      });
+      setSubmitted(true);
+    } catch (err: any) {
+      setErrorMessage(err.message || "Unable to send your inquiry. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -140,12 +160,29 @@ export default function ContactPage() {
                   />
                 </div>
 
+                {errorMessage && (
+                  <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{errorMessage}</span>
+                  </div>
+                )}
+
                 <button
                   type="submit"
-                  className="w-full py-3 bg-[#0F2942] hover:bg-[#163b5f] text-white font-semibold text-sm rounded-xl transition-colors flex items-center justify-center gap-2"
+                  disabled={isSubmitting}
+                  className="w-full py-3 bg-[#0F2942] hover:bg-[#163b5f] disabled:bg-slate-400 text-white font-semibold text-sm rounded-xl transition-colors flex items-center justify-center gap-2"
                 >
-                  <Send className="w-4 h-4" />
-                  <span>Send Message</span>
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Submitting Inquiry...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>Send Message</span>
+                    </>
+                  )}
                 </button>
               </form>
             )}
@@ -184,10 +221,10 @@ export default function ContactPage() {
               </p>
               <div className="space-y-1 text-xs">
                 <Link href="/faq" className="block text-blue-600 hover:underline">
-                  â†’ Frequently Asked Questions
+                  → Frequently Asked Questions
                 </Link>
                 <Link href="/resources/supported-documents" className="block text-blue-600 hover:underline">
-                  â†’ Supported Documents Classification
+                  → Supported Documents Classification
                 </Link>
               </div>
             </div>

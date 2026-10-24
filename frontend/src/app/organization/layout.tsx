@@ -22,8 +22,8 @@ export default function OrganizationLayout({
     }
     const user = api.getCurrentUser();
 
-    if (user && user.role !== "ORGANIZATION") {
-      // Is an individual account trying to access organization workspace
+    if (user && user.role !== "ADMIN") {
+      // Regular USER (Peoples) accounts are routed to the user workspace
       router.replace("/individual");
       return;
     }
@@ -37,7 +37,7 @@ export default function OrganizationLayout({
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-purple-600 mb-3" />
         <p className="text-sm font-medium text-slate-600 dark:text-slate-400">
-          Loading Organization Workspace...
+          Loading Admin Console...
         </p>
       </div>
     );

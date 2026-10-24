@@ -103,6 +103,15 @@ def require_role(allowed_roles: List[str]) -> Callable:
         return current_user
     return role_checker
 
+async def require_admin(current_user: UserResponse = Depends(get_current_user)) -> UserResponse:
+    """RBAC dependency ensuring the authenticated user is an Administrator."""
+    if (current_user.role or "").upper() != "ADMIN":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Administrator privileges required."
+        )
+    return current_user
+
 async def require_verified_user(
     current_user: UserResponse = Depends(get_current_user)
 ) -> UserResponse:

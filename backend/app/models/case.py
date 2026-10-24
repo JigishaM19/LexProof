@@ -29,6 +29,16 @@ class VerificationRailResult(BaseModel):
     discrepancies: List[str] = []
     notes: str
 
+class TamperRegion(BaseModel):
+    id: str
+    page: int = 1
+    # Normalized bounding box [x, y, width, height] as percentage (0 to 100)
+    bbox: List[float] = [0.0, 0.0, 0.0, 0.0]
+    label: str  # e.g., "Font Inconsistency", "Pixel Splicing Artifact", "Metadata Doctoring", "Signature Anomaly"
+    description: str
+    confidence: float = 0.85
+    severity: str = "HIGH"  # "LOW", "MEDIUM", "HIGH"
+
 class DocumentRecord(BaseModel):
     id: str
     case_id: str
@@ -39,7 +49,13 @@ class DocumentRecord(BaseModel):
     file_hash_sha256: str
     storage_path: str
     doc_category: str = "EDUCATIONAL_CREDENTIAL"  # Degree, Transcript, Marksheet, Certificate
-    status: str = "PROCESSED"  # UPLOADED, PROCESSING, PROCESSED, ERROR
+    status: str = "PROCESSED"  # PENDING, PROCESSING, PROCESSED, ERROR
+    processing_stage: Optional[str] = "Completed"
+    page_count: int = 1
+    tamper_detected: bool = False
+    tamper_score: float = 0.0  # 0.0 (Clean) to 1.0 (Highly Altered)
+    tamper_regions: List[TamperRegion] = []
+    storage_backend: str = "local"
     extracted_fields: Dict[str, ExtractedField] = {}
     indicators: List[VerificationIndicator] = []
     verification_result: Optional[VerificationRailResult] = None
@@ -47,6 +63,7 @@ class DocumentRecord(BaseModel):
     forensic_notes: List[str] = []
     created_at: datetime
     updated_at: datetime
+
 
 class CaseRecord(BaseModel):
     id: str
@@ -88,4 +105,34 @@ class InstitutionRequest(BaseModel):
 
 class UpdateFieldsRequest(BaseModel):
     fields: Dict[str, str]
+
+class CandidateEntry(BaseModel):
+    candidate_name: str
+    roll_number: str
+    degree: Optional[str] = None
+    passing_year: Optional[str] = None
+    status: str = "PENDING"  # PENDING, VERIFIED, UNAVAILABLE
+    rail_source: Optional[str] = None
+    notes: Optional[str] = None
+
+class BatchVerificationCreate(BaseModel):
+    batch_title: str
+    target_institution: str
+    purpose: str = "Employment Verification"
+    candidates: List[CandidateEntry] = []
+
+class BatchVerificationRecord(BaseModel):
+    id: str
+    user_id: str
+    organization_name: str
+    batch_title: str
+    target_institution: str
+    purpose: str
+    status: str = "IN_PROGRESS"  # IN_PROGRESS, COMPLETED, AUDITED
+    total_candidates: int = 0
+    verified_candidates: int = 0
+    candidates: List[CandidateEntry] = []
+    created_at: datetime
+    updated_at: datetime
+
 

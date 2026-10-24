@@ -972,9 +972,9 @@ export default function Navbar() {
 
                       {/* Logged in Menu links */}
                       {(() => {
-                        const userRole = (currentUser?.role || "INDIVIDUAL").toUpperCase();
-                        const workspaceUrl = userRole === "ORGANIZATION" ? "/organization" : "/individual";
-                        const workspaceLabel = userRole === "ORGANIZATION" ? "Organization Workspace" : "Individual Workspace";
+                        const userRole = (currentUser?.role || "USER").toUpperCase();
+                        const workspaceUrl = userRole === "ADMIN" ? "/organization" : "/individual";
+                        const workspaceLabel = userRole === "ADMIN" ? "Admin Console" : "Student & User Portal";
                         return (
                           <div className="pt-1 space-y-0.5">
                             <Link
